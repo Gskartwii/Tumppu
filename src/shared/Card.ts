@@ -48,7 +48,7 @@ export class NormalCard implements Card {
             this.Number = num!
             assert(0 <= this.Number && this.Number <= 9, "Invalid number")
         } else {
-            this.Number = num as undefined
+            this.Number = undefined
         }
     }
 
@@ -74,8 +74,7 @@ export class NormalCard implements Card {
 
     public CanJumpIn(previous: Card): boolean {
         if (previous instanceof NormalCard) {
-            let normalPrev = previous as NormalCard
-            return normalPrev.CardType === this.CardType && normalPrev.Color === this.Color
+            return previous.CardType === this.CardType && previous.Color === this.Color
         }
         return false
     }
@@ -87,8 +86,7 @@ export class NormalCard implements Card {
         }
 
         if (previous instanceof NormalCard) {
-            let normalPrev = previous as NormalCard
-            return normalPrev.CardType === this.CardType && normalPrev.Number === this.Number
+            return previous.CardType === this.CardType && previous.Number === this.Number
         }
         return false
     }
@@ -102,17 +100,14 @@ export class NormalCard implements Card {
             if (previous instanceof Wildcard) {
                 return true
             }
-            let normalPrev = previous as NormalCard
-            return normalPrev.Color === this.Color
+            return previous.Color === this.Color || previous.CardType == this.CardType
         }
         if (previous.Color === this.Color) {
             return true
         }
         if (previous instanceof NormalCard) {
-            let normalPrev = previous as NormalCard
-            
             // Same card type; pass
-            return normalPrev.CardType === this.CardType && normalPrev.Number === this.Number
+            return previous.CardType === this.CardType && previous.Number === this.Number
         }
 
         // Wildcard with wrong color
@@ -167,8 +162,7 @@ export class Wildcard implements Card {
 
     public CanJumpIn(previous: Card): boolean {
         if (previous instanceof Wildcard) {
-            let wildPrevious = previous as Wildcard
-            return wildPrevious.CardType === this.CardType
+            return previous.CardType === this.CardType
         }
         return false
     }

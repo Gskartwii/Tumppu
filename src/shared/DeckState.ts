@@ -92,6 +92,20 @@ export class DeckState {
         return this.DiscardPile.Cards[0]
     }
 
+    public CanJumpInCards(cards: Card.CardSequence): boolean {
+        if (!cards.IsValid(this.IsComboMode())) {
+            return false
+        }
+        return cards.Cards[0].CanJumpIn(this.LastCard(), this.IsComboMode())
+    }
+
+    public JumpInCards(cards: Card.CardSequence): void {
+        if (!this.CanJumpInCards(cards)) {
+            error("can't jump in")
+        }
+        this.PlayCards(cards)
+    }
+
     public CanPlayCards(cards: Card.CardSequence): boolean {
         if (!cards.IsValid(this.IsComboMode())) {
             return false
