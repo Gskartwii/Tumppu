@@ -8,5 +8,9 @@
   },
   "keywords": [],
   "author": "",
-  "license": "ISC"
+  "license": "ISC",
+  "dependencies": {
+    "@rbxts/net": "^1.0.10",
+    "@rbxts/types": "^1.0.235"
+  }
 }

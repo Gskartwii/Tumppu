@@ -1,18 +1,20 @@
-export enum Color {
+import * as GameState from './GameState'
+
+export const enum Color {
     Red,
     Blue,
     Yellow,
     Green
 }
 
-export enum NormalCardType {
+export const enum NormalCardType {
     Number,
     Skip,
     Reverse,
     Draw2
 }
 
-export enum WildcardCardType {
+export const enum WildcardCardType {
     Spy,
     Draw4,
     Exchange,
@@ -117,6 +119,7 @@ export class NormalCard implements Card {
 
 export class Wildcard implements Card {
     Color: Color | undefined
+    TargetPlayer: GameState.TumppuPlayer | undefined
     CardType: WildcardCardType
     constructor(cardType: WildcardCardType) {
         this.CardType = cardType
@@ -191,6 +194,18 @@ export class Wildcard implements Card {
 
         return true
     }
+    
+    public SetTargetPlayer(targetPlayer: GameState.TumppuPlayer): void {
+        switch (this.CardType) {
+        case WildcardCardType.Spy:
+        case WildcardCardType.Dictator:
+        case WildcardCardType.Exchange:
+            this.TargetPlayer = targetPlayer
+            break
+        default:
+            error("can't set target player")
+        }
+    }
 }
 
 export class CardSequence {
@@ -259,5 +274,14 @@ export class CardSequence {
 
     public HasType(cardType: NormalCardType | WildcardCardType): boolean {
         return this.Cards.some((card) => card.CardType === cardType)
+    }
+}
+
+export class PlayedCardSequence extends CardSequence {
+    Player: GameState.TumppuPlayer
+
+    constructor(player: GameState.TumppuPlayer) {
+        super()
+        this.Player = player
     }
 }
