@@ -1,6 +1,6 @@
 import { RealPlayer, GameState, TumppuPlayer } from "shared/GameState";
-import { ServerPlayer, ServerGameState } from "./GameState";
-import { PlayedCardSequence, Color } from "shared/Card";
+import { ServerPlayer } from "./GameState";
+import { PlayedCardSequence, Color, Card } from "shared/Card";
 import Net from "@rbxts/net";
 import { ServerHand } from "./Hand";
 
@@ -14,11 +14,6 @@ const tellPlay = new Net.ServerEvent("TellPlay")
 const tellDraw = new Net.ServerEvent("TellDraw")
 const tellColor = new Net.ServerEvent("TellColor")
 const tellVoteCompleted = new Net.ServerEvent("TellVoteCompleted")
-
-export interface ISerializedPlayer {
-    Hand: Array<ISerializedCard> | number
-    Player?: Player
-}
 
 export class ServerRealPlayer extends RealPlayer implements ServerPlayer {
     Hand: ServerHand = new ServerHand
@@ -44,7 +39,7 @@ export class ServerRealPlayer extends RealPlayer implements ServerPlayer {
         return askColor.CallPlayerAsync(this.Player) as Promise<Color>
     }
 
-    public AskVote(state: ServerGameState): Promise<TumppuPlayer> {
+    public AskVote(state: GameState): Promise<TumppuPlayer> {
         return new Promise((resolve, reject) => {
             askVote.CallPlayerAsync(this.Player).then((returns: any) => {
                 let votedPlayer = state.DeserializePlayer(returns as number)
@@ -57,6 +52,22 @@ export class ServerRealPlayer extends RealPlayer implements ServerPlayer {
     }
 
     public TellState(state: GameState): void {
-        tellState.SendToPlayer(this.Player, this.Serialize())
+        tellState.SendToPlayer(this.Player, state.Serialize(this))
+    }
+
+    public TellPlay(cards: PlayedCardSequence, state: GameState): void {
+        tellPlay.SendToPlayer(this.Player, state.SerializePlayer(cards.Player), cards.Cards.map((card) => card.Serialize(state)))
+    }
+
+    public TellDraw(player: TumppuPlayer, cards: Array<Card>, state: GameState): void {
+        tellDraw.SendToPlayer(this.Player, state.SerializePlayer(player), player === this ? cards.map((card) => card.Serialize(state)) : cards.size())
+    }
+
+    public TellColor(color: Color, state: GameState): void {
+        tellColor.SendToPlayer(this.Player, color)
+    }
+
+    public TellVoteCompleted(votes: Map<TumppuPlayer, TumppuPlayer>, state: GameState): void {
+        tellVoteCompleted.SendToAllPlayers(this.Player, votes.entries().map((entry) => [state.SerializePlayer(entry[0]), state.SerializePlayer(entry[1])]))
     }
 }

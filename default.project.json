@@ -31,6 +31,12 @@
         "$path": "out/shared"
       }
     },
+    "ServerScriptService": {
+      "$className": "ServerScriptService",
+      "TumppuServer": {
+        "$path": "out/server"
+      }
+    },
     "SoundService": {
       "$className": "SoundService",
       "$properties": {

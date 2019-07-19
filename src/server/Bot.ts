@@ -1,25 +1,22 @@
-import { GameState, TumppuPlayer } from 'shared/GameState'
+import { GameState, TumppuPlayer, ISerializedPlayer, AbstractPlayer } from 'shared/GameState'
 import * as Hand from 'shared/Hand'
 import { Card, PlayedCardSequence, NormalCard, Wildcard, WildcardCardType, Color } from 'shared/Card';
 import { ServerPlayer } from './GameState'
 
-export class BotPlayer implements ServerPlayer {
-    Hand: Hand.Hand = new Hand.Hand
-    Active: boolean = true
-
+export class BotPlayer extends AbstractPlayer implements ServerPlayer {
     private getBestColor(): Color {
         return (this.Hand.Cards.filter((card) => card instanceof NormalCard) as Array<NormalCard>)
             .reduce((map, card) => {
                 map.get(card.Color)!.push(card)
                 return map
-            }, new Map<Color, Array<Card>>(Object.values(Color).map((color) => [color, []])))
+            }, new Map<Color, Array<Card>>(Object.values([0, 1, 2, 3] as Array<Color>).map((color) => [color, []])))
             .entries()
             .reduce((prev, current) => prev.size() < current.size() ? current : prev)[0]
     }
 
     private getBestPlayer(state: GameState): TumppuPlayer {
         return state.Players
-            .filter((player) => player.Active && player !== this)
+            .filter((player) => player !== this)
             .reduce((prev, current) => prev.Hand.Cards.size() < current.Hand.Cards.size() ? prev : current)
     }
 
@@ -35,7 +32,7 @@ export class BotPlayer implements ServerPlayer {
                 let myCards = this.Hand.Cards
 
                 // find sequences of cards that begin with the same color as the last card
-                let cardsOfColor = myCards.filter((card) => card.Color == lastCard.Color)
+                let cardsOfColor = myCards.filter((card) => card.Color === lastCard.Color)
                 let sequences = cardsOfColor.map<Array<Card>>((card) => this.Hand.FindLongestNormalSequence(card))
 
                 if (lastCard instanceof NormalCard) {

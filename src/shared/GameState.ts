@@ -8,17 +8,52 @@ export const enum Direction {
 
 export interface TumppuPlayer {
     Hand: Hand.Hand
-    Active: boolean
+
+    DrawCards(n: number, state: GameState): Array<Card.Card>
+    Serialize(hidden: boolean, state: GameState): ISerializedPlayer
 }
 
-export class RealPlayer implements TumppuPlayer {
+export interface ISerializedPlayer {
+    Hand: Array<Card.ISerializedCard> | number
+    Player?: Player
+}
+
+export class AbstractPlayer implements TumppuPlayer {
     Hand: Hand.Hand = new Hand.Hand
-    Active: boolean = true
+
+    public DrawCards(n: number, state: GameState): Array<Card.Card> {
+        return this.Hand.DrawCards(n, state)
+    }
+
+    public Serialize(hidden: boolean, state: GameState): ISerializedPlayer {
+        return {
+            Hand: hidden ? this.Hand.Cards.size() : this.Hand.Cards.map((card) => card.Serialize(state))
+        }
+    }
+}
+
+export class RealPlayer extends AbstractPlayer implements TumppuPlayer {
     Player: Player
 
     constructor(player: Player) {
+        super()
         this.Player = player
     }
+
+    public Serialize(hidden: boolean, state: GameState): ISerializedPlayer {
+        let serialized = super.Serialize(hidden, state)
+        serialized.Player = this.Player
+        return serialized
+    }
+}
+
+interface ISerializedGameState {
+    Direction: Direction
+    Players: Array<ISerializedPlayer>
+    Turn: number
+    DrawPile: number
+    DiscardPile: [Card.ISerializedCard, number]
+    CurrentCombo: Array<Card.ISerializedCard> | undefined
 }
 
 export class GameState {
@@ -32,7 +67,8 @@ export class GameState {
 
     private initializeDrawPile(): void {
         let allCards = []
-        for (let color of Object.values(Card.Color)) {
+        // HACK: hardcoded number of colors since we can't use Object.keys/values on const enums
+        for (let color: Card.Color = 0; color < 4; color++) {
             allCards.push(new Card.NormalCard(color, Card.NormalCardType.Number, 0))
             for (let i = 0; i < 2; i++) {
                 for (let j = 1; j <= 9; j++) {
@@ -228,7 +264,7 @@ export class GameState {
             // rule 7.a.iv
             if (this.IsDuel()) {
                 this.GiveTurn(cards.Player)
-            } else if (cards.Cards.size() % 2 == 1) {
+            } else if (cards.Cards.size() % 2 === 1) {
                 this.FlipDirection()
             }
             break
@@ -305,7 +341,7 @@ export class GameState {
             this.Turn %= this.Players.size()
             break
         case Direction.CounterClockwise:
-            if (this.Turn == 0) {
+            if (this.Turn === 0) {
                 this.Turn = this.Players.size() - 1
             } else {
                 this.Turn--
@@ -326,13 +362,36 @@ export class GameState {
         this.CurrentCombo = undefined
     }
 
+    public DeserializePlayer(index: number): TumppuPlayer {
+        return this.Players[index]
+    }
+
+    public SerializePlayer(player: TumppuPlayer): number {
+        let index = this.Players.indexOf(player)
+        if (index === -1) {
+            error("couldn't serialize player")
+        }
+        return index
+    }
+
+    public Serialize(forPlayer?: TumppuPlayer): ISerializedGameState {
+        return {
+            Direction: this.Direction,
+            Players: this.Players.map((player) => player.Serialize(player !== forPlayer, this)),
+            Turn: this.Turn,
+            DrawPile: this.DrawPile.size(),
+            DiscardPile: [this.LastCard().Serialize(this), this.DiscardPile.size()],
+            CurrentCombo: this.CurrentCombo !== undefined ? this.CurrentCombo.Cards.map((card) => card.Serialize(this)) : undefined, 
+        }
+    }
+
     constructor(players: Array<TumppuPlayer>) {
         this.RandomizeDrawPile()
         this.DiscardPile = [this.DrawCard()]
 
         this.Players = players
         for (let player of players) {
-            player.Hand.DrawCards(7, this)
+            player.DrawCards(7, this)
         }
     }
 }
