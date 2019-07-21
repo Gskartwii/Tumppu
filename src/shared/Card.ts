@@ -36,6 +36,7 @@ export interface Card {
     CanSequence(previous: Card, comboMode: boolean): boolean
     CanPlay(previous: Card, comboMode: boolean): boolean
     Serialize(state: GameState): ISerializedCard
+    Name(): string
 }
 
 export interface ISerializedCard {
@@ -134,6 +135,19 @@ export class NormalCard implements Card {
 
         // Wildcard with wrong color
         return false
+    }
+
+    public Name(): string {
+        switch (this.CardType) {
+        case NormalCardType.Draw2:
+            return "+2"
+        case NormalCardType.Reverse:
+            return "RC"
+        case NormalCardType.Skip:
+            return "SC"
+        case NormalCardType.Number:
+            return tostring(this.Number!)
+        }
     }
 }
 
@@ -234,6 +248,25 @@ export class Wildcard implements Card {
             break
         default:
             error("can't set target player")
+        }
+    }
+
+    public Name(): string {
+        switch (this.CardType) {
+        case WildcardCardType.Democracy:
+            return "DMC"
+        case WildcardCardType.Draw4:
+            return "+4"
+        case WildcardCardType.Dictator:
+            return "DC"
+        case WildcardCardType.Everybody:
+            return "EC"
+        case WildcardCardType.Exchange:
+            return "XC"
+        case WildcardCardType.Polluter:
+            return "PC"
+        case WildcardCardType.Spy:
+            return "SPC"
         }
     }
 }
