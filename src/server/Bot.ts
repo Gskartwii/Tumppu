@@ -133,4 +133,12 @@ export class BotPlayer extends AbstractPlayer implements ServerPlayer {
     public TellState(state: GameState): void {
         // nop
     }
+
+    public TellHand(player: TumppuPlayer, state: GameState): void {
+        // nop
+    }
+
+    public DrawCards(n: number, state: GameState): Array<Card> {
+        return this.Hand.DrawCards(n, state)
+    }
 }

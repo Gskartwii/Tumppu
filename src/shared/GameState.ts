@@ -20,10 +20,6 @@ export interface ISerializedPlayer {
 export class AbstractPlayer implements TumppuPlayer {
     Hand: Hand.Hand = new Hand.Hand
 
-    public DrawCards(n: number, state: GameState): Array<Card.Card> {
-        return this.Hand.DrawCards(n, state)
-    }
-
     public Serialize(hidden: boolean, state: GameState): ISerializedPlayer {
         return {
             Hand: hidden ? this.Hand.Cards.size() : this.Hand.Cards.map((card) => card.Serialize(state))
@@ -280,13 +276,6 @@ export class GameState {
                 }
             }
             break
-        case Card.WildcardCardType.Exchange:
-           let myHand = cards.Player.Hand
-           let targetPlayer = (cards.Cards[0] as Card.Wildcard).TargetPlayer!
-           let targetHand = targetPlayer.Hand
-           cards.Player.Hand = targetHand
-           targetPlayer.Hand = myHand
-           break
         }
 
         this.AdvanceTurn()
@@ -303,8 +292,6 @@ export class GameState {
         }
 
         this.DiscardPile.concat(cards.Cards)
-
-        this.handleCards(cards)
     }
 
     public AdvanceTurn(): void {

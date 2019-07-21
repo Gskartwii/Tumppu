@@ -14,6 +14,7 @@ const tellPlay = new Net.ServerEvent("TellPlay")
 const tellDraw = new Net.ServerEvent("TellDraw")
 const tellColor = new Net.ServerEvent("TellColor")
 const tellVoteCompleted = new Net.ServerEvent("TellVoteCompleted")
+const tellHand = new Net.ServerEvent("TellHand")
 
 export class ServerRealPlayer extends RealPlayer implements ServerPlayer {
     Hand: ServerHand = new ServerHand
@@ -44,7 +45,7 @@ export class ServerRealPlayer extends RealPlayer implements ServerPlayer {
             askVote.CallPlayerAsync(this.Player).then((returns: any) => {
                 let votedPlayer = state.DeserializePlayer(returns as number)
                 if (votedPlayer === this) {
-                    error("Can't voted for self")
+                    error("Can't vote for self")
                 }
                 resolve(votedPlayer)
             }, reject)
@@ -71,8 +72,12 @@ export class ServerRealPlayer extends RealPlayer implements ServerPlayer {
         tellVoteCompleted.SendToAllPlayers(this.Player, votes.entries().map((entry) => [state.SerializePlayer(entry[0]), state.SerializePlayer(entry[1])]))
     }
 
+    public TellHand(player: TumppuPlayer, state: GameState): void {
+        tellHand.SendToPlayer(this.Player, state.SerializePlayer(player), player.Hand.Cards.map((card) => card.Serialize(state)))
+    }
+
     public DrawCards(n: number, state: ServerGameState): Array<Card> {
-        let cards = super.DrawCards(n, state)
+        let cards = this.Hand.DrawCards(n, state)
         state.BroadcastDraw(this, cards)
         return cards
     }
