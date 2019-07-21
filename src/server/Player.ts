@@ -1,5 +1,5 @@
 import { RealPlayer, GameState, TumppuPlayer } from "shared/GameState";
-import { ServerPlayer } from "./GameState";
+import { ServerPlayer, ServerGameState } from "./GameState";
 import { PlayedCardSequence, Color, Card } from "shared/Card";
 import Net from "@rbxts/net";
 import { ServerHand } from "./Hand";
@@ -69,5 +69,11 @@ export class ServerRealPlayer extends RealPlayer implements ServerPlayer {
 
     public TellVoteCompleted(votes: Map<TumppuPlayer, TumppuPlayer>, state: GameState): void {
         tellVoteCompleted.SendToAllPlayers(this.Player, votes.entries().map((entry) => [state.SerializePlayer(entry[0]), state.SerializePlayer(entry[1])]))
+    }
+
+    public DrawCards(n: number, state: ServerGameState): Array<Card> {
+        let cards = super.DrawCards(n, state)
+        state.BroadcastDraw(this, cards)
+        return cards
     }
 }

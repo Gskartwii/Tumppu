@@ -9,7 +9,6 @@ export const enum Direction {
 export interface TumppuPlayer {
     Hand: Hand.Hand
 
-    DrawCards(n: number, state: GameState): Array<Card.Card>
     Serialize(hidden: boolean, state: GameState): ISerializedPlayer
 }
 
@@ -49,6 +48,7 @@ export class RealPlayer extends AbstractPlayer implements TumppuPlayer {
 
 interface ISerializedGameState {
     Direction: Direction
+    IsOpenMode: boolean
     Players: Array<ISerializedPlayer>
     Turn: number
     DrawPile: number
@@ -60,6 +60,7 @@ export class GameState {
     Direction: Direction = Direction.Clockwise
     Players: Array<TumppuPlayer>
     Turn: number = 0
+    IsOpenMode: boolean = false
 
     DrawPile: Array<Card.Card> = []
     DiscardPile: Array<Card.Card> = []
@@ -279,34 +280,6 @@ export class GameState {
                 }
             }
             break
-
-        // spy cards handled by client and server code
-
-        case Card.WildcardCardType.Dictator:
-            for (let card of cards.Cards) {
-                (card as Card.Wildcard).TargetPlayer!.Hand.DrawCards(card.DrawValue(), this)
-            }
-            break
-        
-        case Card.WildcardCardType.Everybody:
-            {
-                const cardsToDraw = cards.DrawValue()
-                for (let player of this.Players) {
-                    player.Hand.DrawCards(cardsToDraw, this)
-                }
-            }
-            break
-
-        case Card.WildcardCardType.Polluter:
-            // scopes are weird
-            {
-                const cardsToDraw = cards.DrawValue()
-                for (let player of this.Players.filter((player) => player !== cards.Player)) {
-                    player.Hand.DrawCards(cardsToDraw, this)
-                }
-            }
-            break
-        
         case Card.WildcardCardType.Exchange:
            let myHand = cards.Player.Hand
            let targetPlayer = (cards.Cards[0] as Card.Wildcard).TargetPlayer!
@@ -358,7 +331,6 @@ export class GameState {
     }
 
     public EndCombo(): void {
-        this.CurrentPlayer().Hand.DrawCards(this.CurrentCombo!.DrawValue(), this)
         this.CurrentCombo = undefined
     }
 
@@ -382,16 +354,39 @@ export class GameState {
             DrawPile: this.DrawPile.size(),
             DiscardPile: [this.LastCard().Serialize(this), this.DiscardPile.size()],
             CurrentCombo: this.CurrentCombo !== undefined ? this.CurrentCombo.Cards.map((card) => card.Serialize(this)) : undefined, 
+            IsOpenMode: this.IsOpenMode
+        }
+    }
+
+    protected handleStartingCard(card: Card.Card): void {
+        if (card instanceof Card.NormalCard) {
+            switch (card.CardType) {
+            case Card.NormalCardType.Reverse:
+                this.FlipDirection()
+                break
+            case Card.NormalCardType.Skip:
+                this.AdvanceTurn()
+                break
+            case Card.NormalCardType.Draw2:
+                this.CurrentCombo = new Card.CardSequence()
+                this.CurrentCombo.Cards = this.DiscardPile
+                break
+            }
+        } else {
+            switch (card.CardType) {
+            case Card.WildcardCardType.Democracy:
+            case Card.WildcardCardType.Draw4:
+                this.CurrentCombo = new Card.CardSequence()
+                this.CurrentCombo.Cards = this.DiscardPile
+                break
+            case Card.WildcardCardType.Spy:
+                this.IsOpenMode = true
+                break
+            }
         }
     }
 
     constructor(players: Array<TumppuPlayer>) {
-        this.RandomizeDrawPile()
-        this.DiscardPile = [this.DrawCard()]
-
         this.Players = players
-        for (let player of players) {
-            player.DrawCards(7, this)
-        }
     }
 }
