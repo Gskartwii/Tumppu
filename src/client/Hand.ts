@@ -5,7 +5,7 @@ const CardOffsetMaxScale = 0.238 / 2
 const CardAspectRatio = 2.5/3.5
 
 const HandCardTweenInfo = new TweenInfo(
-    .5, // time
+    1/4, // time
     Enum.EasingStyle.Quart,
     Enum.EasingDirection.InOut,
 )
@@ -24,6 +24,13 @@ export class RenderCardSet {
     }
 
     private cardRendersInOrder(): Array<[Card, TextButton]> {
+        function reliableTieBreaker(a: unknown, b: unknown): boolean {
+            // HACK
+            let aStr = tostring(a)
+            let bStr = tostring(b)
+            return aStr < bStr
+        }
+
         if (!this.UseStandardOrder) {
             let result: Array<[Card, TextButton]> = []
             for (let card of this.Hand) {
@@ -38,23 +45,33 @@ export class RenderCardSet {
             if (aWild !== bWild) {
                 return bWild
             } else if (aWild && bWild) {
+                if (a.CardType === b.CardType) {
+                    return reliableTieBreaker(a, b)
+                }
                 return a.CardType < b.CardType
             }
 
             let aIsNumber = a.CardType === NormalCardType.Number
             let bIsNumber = b.CardType === NormalCardType.Number
-            let colorIsBelow = a.Color! < b.Color!
+            let aColor = a.Color!
+            let bColor = b.Color!
             if (aIsNumber && bIsNumber) {
                 let aNumber = (a as NormalCard).Number!
                 let bNumber = (b as NormalCard).Number!
                 if (aNumber === bNumber) {
-                    return colorIsBelow
+                    if (aColor === bColor) {
+                        return reliableTieBreaker(a, b)
+                    }
+                    return aColor < bColor
                 }
                 return aNumber < bNumber
             }
 
             if (a.CardType === b.CardType) {
-                return colorIsBelow
+                if (aColor === bColor) {
+                    return reliableTieBreaker(a, b)
+                }
+                return aColor < bColor
             }
             return a.CardType < b.CardType
         })
@@ -185,19 +202,33 @@ export class RenderCardSet {
         render.Parent = this.RenderFrame
     }
 
-    public EstimateAbsolutePosition(card: Card, render: TextButton): Vector2 {
-        let oldLayoutOrder = render.LayoutOrder
-        let oldParent = render.Parent
+    public EstimateAbsolutePositions(cards: Map<Card, TextButton>): Map<TextButton, Vector2> {
+        let oldLayoutOrders = cards.values().reduce((map, render) => {
+            map.set(render, render.LayoutOrder)
+            return map
+        }, new Map<TextButton, number>())
+        let oldParents = cards.values().reduce((map, render) => {
+            map.set(render, render.Parent)
+            return map
+        }, new Map<TextButton, Instance | undefined>())
 
-        render.Parent = this.RenderFrame
-        this.CardRenders.set(card, render)
-        let result = this.getCardAbsolutePositions().get(card)!
+        for (let [card, render] of cards) {
+            render.Parent = this.RenderFrame
+            this.CardRenders.set(card, render)
+        }
 
-        this.CardRenders.delete(card)
-        render.LayoutOrder = oldLayoutOrder
-        render.Parent = oldParent
+        let result = this.getCardAbsolutePositions()
 
-        return result
+        for (let [card, render] of cards) {
+            this.CardRenders.delete(card)
+            render.LayoutOrder = oldLayoutOrders.get(render)!
+            render.Parent = oldParents.get(render)
+        }
+
+        return new Map(result
+            .entries()
+            .filter(([card, pos]) => cards.get(card) !== undefined)
+            .map(([card, pos]) => [cards.get(card)!, pos]))
     }
 
     public EstimateAbsoluteSize(): Vector2 {

@@ -1,8 +1,6 @@
 import { LocalGameState } from "./GameState";
 import { ClientEvent, CreateThrottledFunction } from "@rbxts/net";
-import { RenderCardSet } from "./Hand";
 import { ISerializedCard, CardSequence } from "shared/Card";
-import { RenderCard } from "./Card";
 import { GameView } from "./GameView";
 
 const tellDraw = new ClientEvent("TellDraw")
