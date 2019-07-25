@@ -1,7 +1,7 @@
-import { GameState, TumppuPlayer, ISerializedPlayer, AbstractPlayer } from 'shared/GameState'
-import * as Hand from 'shared/Hand'
-import { Card, PlayedCardSequence, NormalCard, Wildcard, WildcardCardType, Color } from 'shared/Card';
-import { ServerPlayer } from './GameState'
+import { GameState } from 'shared/GameState'
+import { Card, NormalCard, Wildcard, WildcardCardType, Color, CardSequence } from 'shared/Card';
+import { ServerPlayer, ServerGameState } from './GameState'
+import { AbstractPlayer, TumppuPlayer, TargetedWildcard } from 'shared/Player';
 
 export class BotPlayer extends AbstractPlayer implements ServerPlayer {
     private getBestColor(): Color {
@@ -17,14 +17,15 @@ export class BotPlayer extends AbstractPlayer implements ServerPlayer {
     private getBestPlayer(state: GameState): TumppuPlayer {
         return state.Players
             .filter((player) => player !== this)
-            .reduce((prev, current) => prev.Hand.Cards.size() < current.Hand.Cards.size() ? prev : current)
+            .reduce((prev, current) => prev.Hand!.Cards.size() < current.Hand!.Cards.size() ? prev : current)
     }
 
     // use promise for compatibility
     // AskPlay should never be called if Hand.ShouldDraw() returns true
-    public AskPlay(state: GameState): Promise<PlayedCardSequence> {
+    public AskPlay(state: GameState): Promise<CardSequence> {
+        print("asking bot to play")
         return new Promise((resolve, reject) => {
-            if (this.Hand.MustDraw(state)) {
+            if (state.MustDraw(this)) {
                 reject("hand should draw yet bot asked to play")
             }
             if (!state.IsComboMode()) {
@@ -45,7 +46,7 @@ export class BotPlayer extends AbstractPlayer implements ServerPlayer {
                 }
 
                 // find sequences of wildcards with the same symbol
-                let wildcards = (myCards.filter((card) => card instanceof Wildcard) as Array<Wildcard>)
+                let wildcards = (myCards.filter((card) => card.IsWildcard()) as Array<Wildcard>)
                     .reduce((map, card) => {
                         let mapArr = map.get(card.CardType)
                         if (mapArr === undefined) {
@@ -60,8 +61,8 @@ export class BotPlayer extends AbstractPlayer implements ServerPlayer {
                 let chosen = sequences.reduce((prev, curr) => prev.size() < curr.size() ? prev : curr)
                 let chosenCard = chosen[0]
 
-                if (chosenCard instanceof Wildcard) {
-                    let wildArray = (chosen as Array<Wildcard>)
+                if (chosenCard.IsWildcard()) {
+                    let wildArray = (chosen as Array<TargetedWildcard>)
                     switch (chosenCard.CardType) {
                     case WildcardCardType.Dictator:
                     case WildcardCardType.Exchange:
@@ -76,7 +77,7 @@ export class BotPlayer extends AbstractPlayer implements ServerPlayer {
                     wildArray.forEach((card) => card.Color = bestColor)
                 }
 
-                let outSequence = new PlayedCardSequence(this)
+                let outSequence = new CardSequence
                 outSequence.Cards = chosen
                 resolve(outSequence)
                 return
@@ -84,7 +85,7 @@ export class BotPlayer extends AbstractPlayer implements ServerPlayer {
             // combo mode
             // TODO: smarter combo AI
             let comboCards = this.Hand.Cards.filter((card) => card.IsComboCard())
-            let outSequence = new PlayedCardSequence(this)
+            let outSequence = new CardSequence
             // play cards one at a time
             outSequence.Cards = [comboCards[0]]
             resolve(outSequence)
@@ -103,19 +104,18 @@ export class BotPlayer extends AbstractPlayer implements ServerPlayer {
         return new Promise((resolve, reject) => resolve(true))
     }
 
-
-    public TellPlay(cards: PlayedCardSequence, state: GameState): void {
+    public TellPlay(player: TumppuPlayer, cards: CardSequence, state: GameState): void {
         // aggressive jump-in
-        let cardsToJumpIn = this.Hand.Cards.filter((card) => card.CanJumpIn(state.LastCard()))
+        /*let cardsToJumpIn = this.Hand.Cards.filter((card) => card.CanJumpIn(state.LastCard()))
         if (cardsToJumpIn.size() !== 0) {
             let sequences = cardsToJumpIn.map<Array<Card>>((card) => this.Hand.FindLongestNormalSequence(card))
             let shortestSequence = sequences.reduce((prev, curr) => prev.size() < curr.size() ? prev : curr)
 
-            let playedSeq = new PlayedCardSequence(this)
+            let playedSeq = new CardSequence
             playedSeq.Cards = shortestSequence
 
-            state.JumpInCards(playedSeq)
-        }
+            state.JumpInCards(this, playedSeq)
+        }*/
     } 
 
     public TellDraw(player: TumppuPlayer, cards: Array<Card>, state: GameState): void {
@@ -138,7 +138,11 @@ export class BotPlayer extends AbstractPlayer implements ServerPlayer {
         // nop
     }
 
-    public DrawCards(n: number, state: GameState): Array<Card> {
-        return this.Hand.DrawCards(n, state)
+    public DrawCards(n: number, state: ServerGameState): Array<Card> {
+        let cards = state.DrawCards(n)
+        this.Hand.AddCards(cards)
+        state.BroadcastDraw(this, cards)
+        
+        return cards
     }
 }

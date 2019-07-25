@@ -13,6 +13,7 @@ const CardPadding = new UDim(0, 16)
 const SpriteSheets = new Map<string, string>([
     ["MaterialContent", "rbxassetid://242376482"],
     ["MaterialNotification", "rbxassetid://242376827"],
+    ["MaterialAction2", "rbxassetid://242376304"],
     ["TumppuExtra", "rbxassetid://3510513770"],
 ])
 const NormalCardIcons = new Map<NormalCardType, {spriteSheet: string, position: Vector2, size: Vector2}>([
@@ -51,6 +52,11 @@ const WildcardIcons = new Map<WildcardCardType, {spriteSheet: string, position: 
     [WildcardCardType.Everybody, {
         spriteSheet: SpriteSheets.get("TumppuExtra")!,
         position: new Vector2(384, 0),
+        size: new Vector2(96, 96),
+    }],
+    [WildcardCardType.Spy, {
+        spriteSheet: SpriteSheets.get("MaterialAction2")!,
+        position: new Vector2(672, 576),
         size: new Vector2(96, 96),
     }],
 ])
@@ -94,7 +100,7 @@ export class RenderCard {
     }
 
     public HasIcon(): boolean {
-        if (this.Card instanceof NormalCard) {
+        if (!this.Card.IsWildcard()) {
             switch (this.Card.CardType) {
             case NormalCardType.Skip:
             case NormalCardType.Reverse:
@@ -103,12 +109,11 @@ export class RenderCard {
                 return false
             }
         } else {
-            return true
+            return this.Card.CardType !== WildcardCardType.Draw4
         }
     }
 
-    public FrontAsFrame(): Frame {
-        let result = new Instance("Frame")
+    private configureFront(result: Frame | TextButton): void {
         result.BackgroundColor3 = this.Card.Color === undefined ? DefaultCardColor : CardColors.get(this.Card.Color)!
         result.BorderSizePixel = 0
         result.Name = "Render_" + tostring(this.Card.Color) + "_" + this.Card.Name()
@@ -121,7 +126,7 @@ export class RenderCard {
         
         if (this.HasIcon()) {
             let iconData: {spriteSheet: string, position: Vector2, size: Vector2}
-            if (this.Card instanceof Wildcard) {
+            if (this.Card.IsWildcard()) {
                 iconData = WildcardIcons.get(this.Card.CardType)!
             } else {
                 iconData = NormalCardIcons.get(this.Card.CardType as NormalCardType)!
@@ -167,7 +172,6 @@ export class RenderCard {
             frontText.Font = MainTextFont
             frontText.Text = this.Card.Name()
             frontText.TextScaled = true
-            frontText.TextWrapped = false
             frontText.TextColor3 = MainTextColor
             frontText.BackgroundTransparency = 1
             let frontTextConstraint = new Instance("UITextSizeConstraint", frontText)
@@ -180,7 +184,6 @@ export class RenderCard {
             nwText.Font = SideTextFont
             nwText.Text = this.Card.Name()
             nwText.TextScaled = true
-            nwText.TextWrapped = false
             nwText.TextColor3 = SideTextColor
             nwText.TextXAlignment = Enum.TextXAlignment.Left
             nwText.TextYAlignment = Enum.TextYAlignment.Top
@@ -194,7 +197,22 @@ export class RenderCard {
             seText.Rotation = 180
             seText.Parent = result
         }
+    }
 
+    public FrontAsButton(): TextButton {
+        let result = new Instance("TextButton")
+        result.AutoButtonColor = false
+        result.Active = true
+        result.Text = ""
+
+        this.configureFront(result)
+
+        return result
+    }
+
+    public FrontAsFrame(): Frame {
+        let result = new Instance("Frame")
+        this.configureFront(result)
         return result
     }
 
@@ -215,5 +233,43 @@ export class RenderCard {
         text.BackgroundTransparency = 1
 
         return result
+    }
+}
+
+// Cards that aren't known by the client
+// For compatibility with GameState stuff
+export class UnknownCard implements Card {
+    Color = undefined
+    CardType = NormalCardType.Number
+
+    public IsSpecial(): never {
+        return error("unknown card")
+    }
+    public IsComboStartCard(): never {
+        return error("unknown card")
+    }
+    public IsComboCard(): never {
+        return error("unknown card")
+    }
+    public DrawValue(): never {
+        return error("unknown card")
+    }
+    public CanJumpIn(): never {
+        return error("unknown card")
+    }
+    public CanSequence(): never {
+        return error("unknown card")
+    }
+    public CanPlay(): never {
+        return error("unknown card")
+    }
+    public Serialize(): never {
+        return error("unknown card")
+    }
+    public Name(): never {
+        return error("unknown card")
+    }
+    public IsWildcard(): never {
+        return error("unknown card")
     }
 }

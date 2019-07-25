@@ -1,54 +1,19 @@
-import * as Hand from './Hand'
 import * as Card from './Card'
+import { ISerializedPlayer, TumppuPlayer, TargetedCard, TargetedWildcard, RealPlayer } from './Player'
 
 export const enum Direction {
     Clockwise,
     CounterClockwise
 }
 
-export interface TumppuPlayer {
-    Hand: Hand.Hand
-
-    Serialize(hidden: boolean, state: GameState): ISerializedPlayer
-}
-
-export interface ISerializedPlayer {
-    Hand: Array<Card.ISerializedCard> | number
-    Player?: Player
-}
-
-export class AbstractPlayer implements TumppuPlayer {
-    Hand: Hand.Hand = new Hand.Hand
-
-    public Serialize(hidden: boolean, state: GameState): ISerializedPlayer {
-        return {
-            Hand: hidden ? this.Hand.Cards.size() : this.Hand.Cards.map((card) => card.Serialize(state))
-        }
-    }
-}
-
-export class RealPlayer extends AbstractPlayer implements TumppuPlayer {
-    Player: Player
-
-    constructor(player: Player) {
-        super()
-        this.Player = player
-    }
-
-    public Serialize(hidden: boolean, state: GameState): ISerializedPlayer {
-        let serialized = super.Serialize(hidden, state)
-        serialized.Player = this.Player
-        return serialized
-    }
-}
-
-interface ISerializedGameState {
+export interface ISerializedGameState {
     Direction: Direction
     IsOpenMode: boolean
+    IsStartingCard: boolean
     Players: Array<ISerializedPlayer>
     Turn: number
     DrawPile: number
-    DiscardPile: [Card.ISerializedCard, number]
+    DiscardPile: {lastCard: Card.ISerializedCard, count: number }
     CurrentCombo: Array<Card.ISerializedCard> | undefined
 }
 
@@ -57,6 +22,7 @@ export class GameState {
     Players: Array<TumppuPlayer>
     Turn: number = 0
     IsOpenMode: boolean = false
+    IsStartingCard: boolean = true
 
     DrawPile: Array<Card.Card> = []
     DiscardPile: Array<Card.Card> = []
@@ -72,23 +38,23 @@ export class GameState {
                     allCards.push(new Card.NormalCard(color, Card.NormalCardType.Number, j))
                 }
 
-                allCards.push(new Card.NormalCard(color, Card.NormalCardType.Draw2))
+                //allCards.push(new Card.NormalCard(color, Card.NormalCardType.Draw2))
                 allCards.push(new Card.NormalCard(color, Card.NormalCardType.Reverse))
                 allCards.push(new Card.NormalCard(color, Card.NormalCardType.Skip))
             }
         }
 
-        for (let i = 0; i < 4; i++) {
-            allCards.push(new Card.Wildcard(Card.WildcardCardType.Draw4))
+        /*for (let i = 0; i < 4; i++) {
+            allCards.push(new TargetedWildcard(Card.WildcardCardType.Draw4))
         }
         for (let i = 0; i < 3; i++) {
-            allCards.push(new Card.Wildcard(Card.WildcardCardType.Spy))
+            allCards.push(new TargetedWildcard(Card.WildcardCardType.Spy))
         }
-        allCards.push(new Card.Wildcard(Card.WildcardCardType.Democracy))
-        allCards.push(new Card.Wildcard(Card.WildcardCardType.Dictator))
-        allCards.push(new Card.Wildcard(Card.WildcardCardType.Everybody))
-        allCards.push(new Card.Wildcard(Card.WildcardCardType.Exchange))
-        allCards.push(new Card.Wildcard(Card.WildcardCardType.Polluter))
+        allCards.push(new TargetedWildcard(Card.WildcardCardType.Democracy))
+        allCards.push(new TargetedWildcard(Card.WildcardCardType.Dictator))
+        allCards.push(new TargetedWildcard(Card.WildcardCardType.Everybody))
+        allCards.push(new TargetedWildcard(Card.WildcardCardType.Exchange))
+        allCards.push(new TargetedWildcard(Card.WildcardCardType.Polluter))*/
 
         this.DrawPile = allCards
     }
@@ -148,22 +114,22 @@ export class GameState {
         return this.Players[this.Turn]
     }
 
-    public CanJumpInCards(cards: Card.PlayedCardSequence): boolean {
+    public CanJumpInCards(player: TumppuPlayer, cards: Card.CardSequence): boolean {
         if (!cards.IsValid(this.IsComboMode())) {
             return false
         }
         return cards.Cards[0].CanJumpIn(this.LastCard())
     }
 
-    public JumpInCards(cards: Card.PlayedCardSequence): void {
-        if (!this.CanJumpInCards(cards)) {
+    public JumpInCards(player: TumppuPlayer, cards: Card.CardSequence): void {
+        if (!this.CanJumpInCards(player, cards)) {
             error("can't jump in")
         }
-        this.PlayCards(cards)
+        this.PlayCards(player, cards)
     }
 
-    public CanPlayCards(cards: Card.PlayedCardSequence): boolean {
-        if (this.CurrentPlayer() !== cards.Player) {
+    public CanPlayCards(player: TumppuPlayer, cards: Card.CardSequence): boolean {
+        if (this.CurrentPlayer() !== player) {
             return false
         }
         if (!cards.IsValid(this.IsComboMode())) {
@@ -175,11 +141,26 @@ export class GameState {
 
         // rule 7.f.ii
         if (cards.Cards.every((card) => card.CardType === Card.WildcardCardType.Exchange)
-            && cards.Cards.size() === cards.Player.Hand.Cards.size()) {
+            && cards.Cards.size() === player.Hand!.Cards.size()) {
             return false
         }
 
         return true
+    }
+
+    public CanDraw(player: TumppuPlayer): boolean {
+        // TODO: don't allow playing exchange if it was ignored by this player
+        return this.IsComboMode() || player.Hand!.Cards.every((card) => {
+            return card instanceof Card.Wildcard && card.CardType === Card.WildcardCardType.Exchange
+                || !card.CanPlay(this.LastCard(), this.IsComboMode())
+        })
+    }
+
+    public MustDraw(player: TumppuPlayer): boolean {
+        // TODO: don't allow playing exchange if it was ignored by this player
+        return player.Hand!.Cards.every((card) => {
+            return !card.CanPlay(this.LastCard(), this.IsComboMode())
+        })
     }
 
     public FlipDirection(): void {
@@ -210,7 +191,7 @@ export class GameState {
                 break
             case Card.WildcardCardType.Exchange:
                 let myHand = player.Hand
-                let targetPlayer = (card as Card.Wildcard).TargetPlayer!
+                let targetPlayer = (card as TargetedCard).TargetPlayer!
                 let otherHand = targetPlayer.Hand
                 player.Hand = otherHand
                 targetPlayer.Hand = myHand
@@ -223,7 +204,7 @@ export class GameState {
         }
     }
 
-    protected handleCardsComboMode(cards: Card.PlayedCardSequence): void {
+    protected handleCardsComboMode(player: TumppuPlayer, cards: Card.CardSequence): void {
         if (cards.Cards.every((card) => card.CardType === Card.WildcardCardType.Spy)) {
             this.EndCombo()
             return
@@ -239,20 +220,20 @@ export class GameState {
             return
         } else if (turnCards[0].CardType === Card.NormalCardType.Reverse) {
             // special case: rule 16.d.iii.1
-            this.handleCardComboMode(turnCards[0], cards.Player)
+            this.handleCardComboMode(turnCards[0], player)
             turnCards = turnCards.slice(1)
         }
 
         this.AdvanceTurn()
 
         for (let card of turnCards) {
-            this.handleCardComboMode(card, cards.Player)
+            this.handleCardComboMode(card, player)
         }
     }
 
-    protected handleCards(cards: Card.PlayedCardSequence): void {
+    protected handleCards(player: TumppuPlayer, cards: Card.CardSequence): void {
         if (this.IsComboMode()) {
-            return this.handleCardsComboMode(cards)
+            return this.handleCardsComboMode(player, cards)
         }
 
         // assume non-combo sequences are homogenous, i.e. all cards have the same type
@@ -260,7 +241,7 @@ export class GameState {
         case Card.NormalCardType.Reverse:
             // rule 7.a.iv
             if (this.IsDuel()) {
-                this.GiveTurn(cards.Player)
+                this.GiveTurn(player)
             } else if (cards.Cards.size() % 2 === 1) {
                 this.FlipDirection()
             }
@@ -268,7 +249,7 @@ export class GameState {
         case Card.NormalCardType.Skip:
             // rule 7.a.iv
             if (this.IsDuel()) {
-                this.GiveTurn(cards.Player)
+                this.GiveTurn(player)
             } else {
                 const numCards = cards.Cards.size()
                 for (let i = 0; i < numCards; i++) {
@@ -281,17 +262,23 @@ export class GameState {
         this.AdvanceTurn()
     }
 
-    public PlayCards(cards: Card.PlayedCardSequence): void {
-        if (!this.CanPlayCards(cards)) {
-            error("can't play cards")
-        }
+    private playCards(player: TumppuPlayer, cards: Card.CardSequence): void {
         if (!this.IsComboMode() && cards.IsComboStartSequence()) {
             this.CurrentCombo = cards
         } else if (this.IsComboMode()) {
             this.CurrentCombo!.Cards.concat(cards.Cards)
         }
 
-        this.DiscardPile.concat(cards.Cards)
+        this.DiscardPile = this.DiscardPile.concat(cards.Cards)
+        player.Hand!.RemoveCards(cards.Cards)
+    }
+
+    public PlayCards(player: TumppuPlayer, cards: Card.CardSequence): void {
+        if (!this.CanPlayCards(player, cards)) {
+            error("can't play cards")
+        }
+
+        this.playCards(player, cards)
     }
 
     public AdvanceTurn(): void {
@@ -333,15 +320,23 @@ export class GameState {
         return index
     }
 
+    public SerializePlayerForInit(hidden: boolean, player: TumppuPlayer): ISerializedPlayer {
+        return {
+            Hand: hidden ? player.Hand!.Cards.size() : player.Hand!.Cards.map((card) => this.SerializeCard(card)),
+            Player: player instanceof RealPlayer ? player.Player : undefined
+        }
+    }
+
     public Serialize(forPlayer?: TumppuPlayer): ISerializedGameState {
         return {
             Direction: this.Direction,
-            Players: this.Players.map((player) => player.Serialize(player !== forPlayer, this)),
+            Players: this.Players.map((player) => this.SerializePlayerForInit(player !== forPlayer, player)),
             Turn: this.Turn,
             DrawPile: this.DrawPile.size(),
-            DiscardPile: [this.LastCard().Serialize(this), this.DiscardPile.size()],
-            CurrentCombo: this.CurrentCombo !== undefined ? this.CurrentCombo.Cards.map((card) => card.Serialize(this)) : undefined, 
-            IsOpenMode: this.IsOpenMode
+            DiscardPile: {lastCard: this.SerializeCard(this.LastCard()), count: this.DiscardPile.size()},
+            CurrentCombo: this.CurrentCombo !== undefined ? this.CurrentCombo.Cards.map((card) => this.SerializeCard(card)) : undefined, 
+            IsOpenMode: this.IsOpenMode,
+            IsStartingCard: this.IsStartingCard,
         }
     }
 
@@ -371,6 +366,31 @@ export class GameState {
                 break
             }
         }
+
+        this.AdvanceTurn()
+    }
+
+    public SerializeCard(card: Card.Card): Card.ISerializedCard {
+        return {
+            Wildcard: card.IsWildcard(),
+            Type: card.CardType,
+            Color: card.Color,
+            Number: card instanceof Card.NormalCard ? card.Number : undefined,
+            TargetPlayerIndex: card.IsWildcard() && (card as TargetedWildcard).TargetPlayer !== undefined ? this.SerializePlayer((card as TargetedWildcard).TargetPlayer!) : undefined,
+        }
+    }
+
+    public DeserializeCard(serialized: Card.ISerializedCard): Card.Card {
+        if (serialized.Wildcard) {
+            let result = new TargetedWildcard(serialized.Type as Card.WildcardCardType)
+            result.Color = serialized.Color
+            if (serialized.TargetPlayerIndex !== undefined) {
+                result.TargetPlayer = this.Players[serialized.TargetPlayerIndex]
+            }
+
+            return result
+        }
+        return new Card.NormalCard(serialized.Color!, serialized.Type as Card.NormalCardType, serialized.Number)
     }
 
     constructor(players: Array<TumppuPlayer>) {

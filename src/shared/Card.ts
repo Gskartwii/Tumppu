@@ -1,4 +1,4 @@
-import { GameState, TumppuPlayer } from './GameState'
+import { TargetedWildcard } from "./Player";
 
 export const enum Color {
     Red,
@@ -31,11 +31,11 @@ export interface Card {
     IsSpecial(): boolean
     IsComboStartCard(): boolean
     IsComboCard(): boolean
+    IsWildcard(): this is Wildcard
     DrawValue(): number
     CanJumpIn(previous: Card): boolean
     CanSequence(previous: Card, comboMode: boolean): boolean
     CanPlay(previous: Card, comboMode: boolean): boolean
-    Serialize(state: GameState): ISerializedCard
     Name(): string
 }
 
@@ -46,7 +46,6 @@ export interface ISerializedCard {
     Number?: number
     TargetPlayerIndex?: number
 }
-
 
 export class NormalCard implements Card {
     Color: Color
@@ -62,16 +61,6 @@ export class NormalCard implements Card {
             assert(0 <= this.Number && this.Number <= 9, "Invalid number")
         } else {
             this.Number = undefined
-        }
-    }
-
-    public Serialize(state: GameState): ISerializedCard {
-        return {
-            Wildcard: false,
-            Type: this.CardType,
-            Color: this.Color,
-            Number: this.Number,
-            TargetPlayerIndex: undefined,
         }
     }
 
@@ -120,7 +109,7 @@ export class NormalCard implements Card {
                 return false
             }
 
-            if (previous instanceof Wildcard) {
+            if (previous.IsWildcard()) {
                 return true
             }
             return previous.Color === this.Color || previous.CardType === this.CardType
@@ -149,24 +138,17 @@ export class NormalCard implements Card {
             return tostring(this.Number!)
         }
     }
+
+    public IsWildcard(): this is Wildcard {
+        return false
+    }
 }
 
 export class Wildcard implements Card {
     Color: Color | undefined
-    TargetPlayer: TumppuPlayer | undefined
     CardType: WildcardCardType
     constructor(cardType: WildcardCardType) {
         this.CardType = cardType
-    }
-
-    public Serialize(state: GameState): ISerializedCard {
-        return {
-            Wildcard: true,
-            Type: this.CardType,
-            Color: this.Color,
-            Number: undefined,
-            TargetPlayerIndex: this.TargetPlayer !== undefined ? state.Players.indexOf(this.TargetPlayer) : undefined,
-        }
     }
 
     public IsSpecial(): boolean {
@@ -208,7 +190,7 @@ export class Wildcard implements Card {
     }
 
     public CanJumpIn(previous: Card): boolean {
-        if (previous instanceof Wildcard) {
+        if (previous.IsWildcard()) {
             return previous.CardType === this.CardType
         }
         return false
@@ -239,18 +221,6 @@ export class Wildcard implements Card {
         return true
     }
     
-    public SetTargetPlayer(targetPlayer: TumppuPlayer): void {
-        switch (this.CardType) {
-        case WildcardCardType.Spy:
-        case WildcardCardType.Dictator:
-        case WildcardCardType.Exchange:
-            this.TargetPlayer = targetPlayer
-            break
-        default:
-            error("can't set target player")
-        }
-    }
-
     public Name(): string {
         switch (this.CardType) {
         case WildcardCardType.Democracy:
@@ -268,6 +238,10 @@ export class Wildcard implements Card {
         case WildcardCardType.Spy:
             return "SPC"
         }
+    }
+
+    public IsWildcard(): this is Wildcard {
+        return true
     }
 }
 
@@ -338,26 +312,4 @@ export class CardSequence {
     public HasType(cardType: NormalCardType | WildcardCardType): boolean {
         return this.Cards.some((card) => card.CardType === cardType)
     }
-}
-
-export class PlayedCardSequence extends CardSequence {
-    Player: TumppuPlayer
-
-    constructor(player: TumppuPlayer) {
-        super()
-        this.Player = player
-    }
-}
-
-export function DeserializeCard(serialized: ISerializedCard, state: GameState): Card {
-    if (serialized.Wildcard) {
-        let result = new Wildcard(serialized.Type as WildcardCardType)
-        result.Color = serialized.Color
-        if (serialized.TargetPlayerIndex !== undefined) {
-            result.TargetPlayer = state.Players[serialized.TargetPlayerIndex]
-        }
-
-        return result
-    }
-    return new NormalCard(serialized.Color!, serialized.Type as NormalCardType, serialized.Number)
 }

@@ -27,14 +27,23 @@
       "rbxts_include": {
         "$path": "include"
       },
-      "TumppuEngine": {
+      "TS": {
         "$path": "out/shared"
       }
     },
     "ServerScriptService": {
       "$className": "ServerScriptService",
-      "TumppuServer": {
+      "TS": {
         "$path": "out/server"
+      }
+    },
+    "StarterPlayer": {
+      "$className": "StarterPlayer",
+      "StarterPlayerScripts": {
+        "$className": "StarterPlayerScripts",
+        "TS": {
+          "$path": "out/client"
+        }
       }
     },
     "SoundService": {

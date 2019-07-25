@@ -1,10 +1,10 @@
-import { RealPlayer, GameState, TumppuPlayer } from "shared/GameState";
+import { GameState } from "shared/GameState";
 import { ServerPlayer, ServerGameState } from "./GameState";
-import { PlayedCardSequence, Color, Card } from "shared/Card";
+import { Color, Card, CardSequence } from "shared/Card";
 import Net from "@rbxts/net";
-import { ServerHand } from "./Hand";
+import { RealPlayer, TumppuPlayer } from "shared/Player";
 
-const askPlay = new Net.ServerFunction("AskPlay")
+const askPlay = new Net.ServerEvent("AskPlay")
 const askDraw = new Net.ServerFunction("AskDraw")
 const askColor = new Net.ServerFunction("AskColor")
 const askVote = new Net.ServerFunction("AskVote")
@@ -16,19 +16,37 @@ const tellColor = new Net.ServerEvent("TellColor")
 const tellVoteCompleted = new Net.ServerEvent("TellVoteCompleted")
 const tellHand = new Net.ServerEvent("TellHand")
 
-export class ServerRealPlayer extends RealPlayer implements ServerPlayer {
-    Hand: ServerHand = new ServerHand
+function connectOnce<T extends Array<unknown>>(event: Net.ServerEvent, forPlayer: RealPlayer): Promise<T> {
+    return new Promise((resolve, reject) => {
+        let connection: RBXScriptConnection
+        connection = (event.getEvent() as RBXScriptSignal<(player: Player, ...args: T) => void>).Connect((player, ...args) => {
+            if (forPlayer.Player === player) {
+                connection.Disconnect()
+                resolve(args)
+            }
+        })
+    })
+}
 
+export class ServerRealPlayer extends RealPlayer implements ServerPlayer {
     constructor(player: Player) {
         super(player)
     }
 
-    public AskPlay(state: GameState): Promise<PlayedCardSequence> {
+    public AskPlay(state: GameState): Promise<CardSequence> {
+        print("asking player to play")
         return new Promise((resolve, reject) => {
-            askPlay.CallPlayerAsync(this.Player).then((returns: any) => {
-                // handle colors, player assigns, etc.
-                resolve(this.Hand.DeserializeSequence(this, returns as Array<number>))
-            }, reject)
+            connectOnce<[Array<number>]>(askPlay, this).then((returns: [Array<number>]) => {
+                print(returns[0][0])
+                let cards = returns[0].map((index) => this.Hand.Cards[index])
+                let result = new CardSequence
+                result.Cards = cards
+
+                print("playing cards", result.Cards.map((card) => card.Name()).join(","))
+
+                resolve(result)
+            })
+            askPlay.SendToPlayer(this.Player)
         })
     }
 
@@ -56,12 +74,12 @@ export class ServerRealPlayer extends RealPlayer implements ServerPlayer {
         tellState.SendToPlayer(this.Player, state.Serialize(this))
     }
 
-    public TellPlay(cards: PlayedCardSequence, state: GameState): void {
-        tellPlay.SendToPlayer(this.Player, state.SerializePlayer(cards.Player), cards.Cards.map((card) => card.Serialize(state)))
+    public TellPlay(player: TumppuPlayer, cards: CardSequence, state: GameState): void {
+        tellPlay.SendToPlayer(this.Player, state.SerializePlayer(player), cards.Cards.map((card) => state.SerializeCard(card)))
     }
 
     public TellDraw(player: TumppuPlayer, cards: Array<Card>, state: GameState): void {
-        tellDraw.SendToPlayer(this.Player, state.SerializePlayer(player), player === this ? cards.map((card) => card.Serialize(state)) : cards.size())
+        tellDraw.SendToPlayer(this.Player, state.SerializePlayer(player), player === this ? cards.map((card) => state.SerializeCard(card)) : cards.size())
     }
 
     public TellColor(color: Color, state: GameState): void {
@@ -73,11 +91,12 @@ export class ServerRealPlayer extends RealPlayer implements ServerPlayer {
     }
 
     public TellHand(player: TumppuPlayer, state: GameState): void {
-        tellHand.SendToPlayer(this.Player, state.SerializePlayer(player), player.Hand.Cards.map((card) => card.Serialize(state)))
+        tellHand.SendToPlayer(this.Player, state.SerializePlayer(player), player.Hand!.Cards.map((card) => state.SerializeCard(card)))
     }
 
     public DrawCards(n: number, state: ServerGameState): Array<Card> {
-        let cards = this.Hand.DrawCards(n, state)
+        let cards = state.DrawCards(n)
+        this.Hand.AddCards(cards)
         state.BroadcastDraw(this, cards)
         return cards
     }
