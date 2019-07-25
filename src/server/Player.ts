@@ -39,8 +39,7 @@ export class ServerRealPlayer extends RealPlayer implements ServerPlayer {
             connectOnce<[Array<number>]>(askPlay, this).then((returns: [Array<number>]) => {
                 print(returns[0][0])
                 let cards = returns[0].map((index) => this.Hand.Cards[index])
-                let result = new CardSequence
-                result.Cards = cards
+                let result = new CardSequence(cards)
 
                 print("playing cards", result.Cards.map((card) => card.Name()).join(","))
 

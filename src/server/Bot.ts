@@ -77,17 +77,15 @@ export class BotPlayer extends AbstractPlayer implements ServerPlayer {
                     wildArray.forEach((card) => card.Color = bestColor)
                 }
 
-                let outSequence = new CardSequence
-                outSequence.Cards = chosen
+                let outSequence = new CardSequence(chosen)
                 resolve(outSequence)
                 return
             }
             // combo mode
             // TODO: smarter combo AI
             let comboCards = this.Hand.Cards.filter((card) => card.IsComboCard())
-            let outSequence = new CardSequence
             // play cards one at a time
-            outSequence.Cards = [comboCards[0]]
+            let outSequence = new CardSequence([comboCards[0]])
             resolve(outSequence)
         })
     }

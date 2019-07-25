@@ -1,10 +1,8 @@
-import { Card } from "shared/Card";
+import { Card, NormalCardType, NormalCard } from "shared/Card";
 import { RenderCard } from "./Card";
-import { Hand, TumppuPlayer } from "shared/Player";
 
-// Assuming the size of the parent is given by RelativeYY, this will yield the correct dimensions
-const CardSize = new UDim2(0.238, 0, 1, 0)
 const CardOffsetMaxScale = 0.238 / 2
+const CardAspectRatio = 2.5/3.5
 
 const HandCardTweenInfo = new TweenInfo(
     .5, // time
@@ -14,23 +12,72 @@ const HandCardTweenInfo = new TweenInfo(
 
 const TweenService = game.GetService("TweenService")
 
-export class RenderHand {
-    Player: TumppuPlayer
-    Hand: Hand
+export class RenderCardSet {
+    Hand: Array<Card>
+    UseStandardOrder: boolean = true
     private RenderFrame: Frame
-    private hasRendered: boolean = false
     CardRenders: Map<Card, TextButton> = new Map()
 
-    constructor(player: TumppuPlayer, frame: Frame) {
-        this.Player = player
-        this.Hand = player.Hand!
+    constructor(hand: Array<Card>, frame: Frame) {
+        this.Hand = hand
         this.RenderFrame = frame
     }
 
+    private cardRendersInOrder(): Array<[Card, TextButton]> {
+        if (!this.UseStandardOrder) {
+            let result: Array<[Card, TextButton]> = []
+            for (let card of this.Hand) {
+                result.push([card, this.CardRenders.get(card)!])
+            }
+            return result
+        }
+        let result = this.CardRenders.entries()
+        table.sort(result, ([a, _], [b, __]) => {
+            let aWild = a.IsWildcard()
+            let bWild = b.IsWildcard()
+            if (aWild !== bWild) {
+                return bWild
+            } else if (aWild && bWild) {
+                return a.CardType < b.CardType
+            }
+
+            let aIsNumber = a.CardType === NormalCardType.Number
+            let bIsNumber = b.CardType === NormalCardType.Number
+            let colorIsBelow = a.Color! < b.Color!
+            if (aIsNumber && bIsNumber) {
+                let aNumber = (a as NormalCard).Number!
+                let bNumber = (b as NormalCard).Number!
+                if (aNumber === bNumber) {
+                    return colorIsBelow
+                }
+                return aNumber < bNumber
+            }
+
+            if (a.CardType === b.CardType) {
+                return colorIsBelow
+            }
+            return a.CardType < b.CardType
+        })
+
+        return result
+    }
+
+    private fixLayoutOrders(): void {
+        let i = 0
+        for (let [card, render] of this.cardRendersInOrder()) {
+            render.LayoutOrder = i
+            render.ZIndex = i
+            i++
+        }
+    }
+
     private getCardAbsolutePositions(): Map<Card, Vector2> {
+        this.fixLayoutOrders()
         let layoutDelegate = new Instance("UIGridLayout")
         layoutDelegate.Name = "__LayoutDelegate"
-        layoutDelegate.CellSize = CardSize
+
+        let cardSize = this.EstimateAbsoluteSize()
+        layoutDelegate.CellSize = new UDim2(0, cardSize.X, 0, cardSize.Y)
         layoutDelegate.CellPadding = new UDim2(-CardOffsetMaxScale, 0, 0, 0)
         layoutDelegate.FillDirection = Enum.FillDirection.Horizontal
         layoutDelegate.HorizontalAlignment = Enum.HorizontalAlignment.Center
@@ -54,17 +101,17 @@ export class RenderHand {
         return result
     }
 
-    private initialRenderToFrame(): void {
+    public Render(): void {
+        let cardSizeVec = this.EstimateAbsoluteSize()
+        let cardSize = new UDim2(0, cardSizeVec.X, 0, cardSizeVec.Y)
         this.RenderFrame.ClearAllChildren()
         this.CardRenders = new Map()
 
-        let cards = this.Hand.Cards
+        let cards = this.Hand
         this.CardRenders = cards.reduce((map, card, index) => {
             let render = new RenderCard(card).FrontAsButton()
-            render.Size = CardSize
+            render.Size = cardSize
             render.Parent = this.RenderFrame
-            render.ZIndex = index
-            render.LayoutOrder = index
 
             map.set(card, render)
             return map
@@ -75,25 +122,12 @@ export class RenderHand {
         })
     }
 
-    private disownOutdatedRenders(): void {
-        this.CardRenders = new Map(
-            this.CardRenders
-                .entries()
-                .filter(([card, btn]) => {
-                    return this.Hand.HasCards([card])
-                })
-        )
-    }
-
-    private tweenCardsToPosition(): Promise<void> {
+    private tweenCardsToPosition(newPositions: Map<Card, Vector2>): Promise<void> {
         return new Promise((resolve, reject) => {
-            this.disownOutdatedRenders()
-
-            let newPositions = this.getCardRelativePositions()
             let tweens: Array<Tween> = []
 
-            for (let [card, render] of this.CardRenders) {
-                let newPosition = newPositions.get(card)!
+            for (let [card, newPosition] of newPositions) {
+                let render = this.CardRenders.get(card)!
                 let tween = TweenService.Create(
                     render,
                     HandCardTweenInfo,
@@ -112,15 +146,74 @@ export class RenderHand {
         })
     }
 
-    public Update(): Promise<void> {
-        return new Promise((resolve, reject) => {
-            if (!this.hasRendered) {
-                this.initialRenderToFrame()
-                this.hasRendered = true
-                resolve()
-            } else {
-                this.tweenCardsToPosition().then(resolve, reject)
-            }
-        })
+    public AddNewCards(cards: Array<Card>): Map<Card, TextButton> {
+        let baseIndex = this.CardRenders.size()
+        let cardSizeVec = this.EstimateAbsoluteSize()
+        let cardSize = new UDim2(0, cardSizeVec.X, 0, cardSizeVec.Y)
+
+        let newRenders = cards.reduce((map, card, index) => {
+            let render = new RenderCard(card).FrontAsButton()
+            render.Size = cardSize
+            render.Parent = this.RenderFrame
+            render.ZIndex = baseIndex + index
+            render.LayoutOrder = baseIndex + index
+
+            map.set(card, render)
+            return map
+        }, new Map<Card, TextButton>())
+
+        this.CardRenders = new Map(this.CardRenders.entries().concat(newRenders.entries()))
+        this.tweenCardsToPosition(this.getCardRelativePositions())
+
+        return newRenders
+    }
+
+    public MakeSpaceForCardRenders(cards: Map<Card, TextButton>): void {
+        for (let [card, render] of cards) {
+            render.Parent = this.RenderFrame
+        }
+
+        this.CardRenders = new Map(this.CardRenders.entries().concat(cards.entries()))
+        let positions = this.getCardRelativePositions()
+        for (let [card, render] of cards) {
+            positions.delete(card)
+        }
+        this.tweenCardsToPosition(positions)
+    }
+
+    public AddRender(render: TextButton): void {
+        render.Parent = this.RenderFrame
+    }
+
+    public EstimateAbsolutePosition(card: Card, render: TextButton): Vector2 {
+        let oldLayoutOrder = render.LayoutOrder
+        let oldParent = render.Parent
+
+        render.Parent = this.RenderFrame
+        this.CardRenders.set(card, render)
+        let result = this.getCardAbsolutePositions().get(card)!
+
+        this.CardRenders.delete(card)
+        render.LayoutOrder = oldLayoutOrder
+        render.Parent = oldParent
+
+        return result
+    }
+
+    public EstimateAbsoluteSize(): Vector2 {
+        let absoluteY = this.RenderFrame.AbsoluteSize.Y
+        return new Vector2(absoluteY * CardAspectRatio, absoluteY)
+    }
+
+    public DisownCards(cards: Array<Card>): void {
+        for (let card of cards) {
+            this.CardRenders.delete(card)
+        }
+
+        this.tweenCardsToPosition(this.getCardRelativePositions())
+    }
+
+    public GetAbsolutePosition(): Vector2 {
+        return this.RenderFrame.AbsolutePosition
     }
 }

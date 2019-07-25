@@ -28,7 +28,7 @@ export class GameState {
     DiscardPile: Array<Card.Card> = []
     CurrentCombo: Card.CardSequence | undefined
 
-    private initializeDrawPile(): void {
+    protected initializeDrawPile(): void {
         let allCards = []
         // HACK: hardcoded number of colors since we can't use Object.keys/values on const enums
         for (let color: Card.Color = 0; color < 4; color++) {
@@ -107,7 +107,7 @@ export class GameState {
     }
 
     public LastCard(): Card.Card {
-        return this.DiscardPile[0]
+        return this.DiscardPile[this.DiscardPile.size() - 1]
     }
 
     public CurrentPlayer(): TumppuPlayer {

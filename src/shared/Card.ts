@@ -246,7 +246,11 @@ export class Wildcard implements Card {
 }
 
 export class CardSequence {
-    Cards: Array<Card> = []
+    Cards: Array<Card>
+
+    constructor(cards: Array<Card> = []) {
+        this.Cards = cards
+    }
 
     public IsValid(comboMode: boolean): boolean {
         if (this.Cards.size() === 0) {
@@ -311,5 +315,9 @@ export class CardSequence {
 
     public HasType(cardType: NormalCardType | WildcardCardType): boolean {
         return this.Cards.some((card) => card.CardType === cardType)
+    }
+
+    public CanAddCard(card: Card, isComboMode: boolean): boolean {
+        return this.IsValid(isComboMode) && card.CanSequence(this.Cards[this.Cards.size() - 1], isComboMode || this.IsComboStartSequence())
     }
 }

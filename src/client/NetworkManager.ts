@@ -1,31 +1,23 @@
 import { LocalGameState } from "./GameState";
 import { ClientEvent, CreateThrottledFunction } from "@rbxts/net";
-import { RenderHand } from "./Hand";
+import { RenderCardSet } from "./Hand";
 import { ISerializedCard, CardSequence } from "shared/Card";
 import { RenderCard } from "./Card";
+import { GameView } from "./GameView";
 
 const tellDraw = new ClientEvent("TellDraw")
 const tellPlay = new ClientEvent("TellPlay")
 const askPlay = new ClientEvent("AskPlay")
 
-const localPlayer = game.GetService("Players").LocalPlayer
-const handFrame = localPlayer.WaitForChild("PlayerGui")
-    .WaitForChild("TumppuGui")
-    .WaitForChild<Frame>("OwnCards")
-const playedCardContainer = localPlayer.WaitForChild("PlayerGui")
-    .WaitForChild("TumppuGui")
-    .WaitForChild("CenterContainer")
-    .WaitForChild("Cards")
-
 export class NetworkManager {
     GameState: LocalGameState
-    private handRender: RenderHand
+    private gameView: GameView
 
-    constructor(state: LocalGameState) {
+    constructor(state: LocalGameState, view: GameView) {
         this.GameState = state
-        this.handRender = new RenderHand(state.LocalPlayer(), handFrame)
+        this.gameView = view
 
-        this.UpdateTopCard()
+        this.gameView.UpdateTopCard()
 
         tellDraw.Connect((playerIndex: number, cards: number | Array<ISerializedCard>) => {
             let player = state.DeserializePlayer(playerIndex)
@@ -34,7 +26,7 @@ export class NetworkManager {
             player.Hand!.AddCards(newCards)
 
             if (player === state.LocalPlayer()) {
-                this.UpdateHand()
+                this.gameView.AddNewCards(newCards)
             }
         })
 
@@ -48,61 +40,25 @@ export class NetworkManager {
             let deserializedCards = state.DeserializeCards(cards)
             hand.AddCards(deserializedCards)
 
-            let seq = new CardSequence
-            seq.Cards = deserializedCards
+            let seq = new CardSequence(deserializedCards)
 
-            print("playing cards", deserializedCards.map((card) => card.Name()).join())
+            print("tellplay cards", deserializedCards.map((card) => card.Name()).join())
             this.GameState.PlayCards(player, seq)
 
-            this.UpdateTopCard()
+            this.gameView.UpdateTopCard()
         })
 
         askPlay.Connect(async () => {
             print("asked to play")
-            let playedCards = await this.AskPlay()
-            this.UpdateTopCard()
+            let player = this.GameState.LocalPlayer()
+            let playedCards = await this.gameView.AskPlay()
+            print("playing cards", playedCards.Cards.map((card) => card.Name()).join())
+            let serialized = playedCards.Cards.map((card) => player.Hand!.Cards.indexOf(card))
+            this.GameState.PlayCards(player, playedCards)
 
-            askPlay.SendToServer(playedCards)
-        })
-    }
+            this.gameView.UpdateTopCard()
 
-    public UpdateTopCard(): void {
-        print("updating topcard")
-        const state = this.GameState
-        playedCardContainer.WaitForChild("PlayedCard").Destroy()
-
-        let cardRender = new RenderCard(state.DiscardPile[state.DiscardPile.size() - 1])
-        let frame = cardRender.FrontAsFrame()
-        frame.Name = "PlayedCard"
-        frame.Parent = playedCardContainer
-    }
-
-    public UpdateHand(): Promise<void> {
-        print("updating hand")
-        return this.handRender.Update()
-    }
-
-    public AskPlay(): Promise<Array<number>> {
-        return new Promise((resolve, reject) => {
-            let connections: Array<RBXScriptConnection> = []
-            for (let [card, render] of this.handRender.CardRenders) {
-                connections.push(render.Activated.Connect((activated) => {
-                    let seq = new CardSequence
-                    seq.Cards = [card]
-                    let localPlayer = this.GameState.LocalPlayer()
-                    if (this.GameState.CanPlayCards(localPlayer, seq)) {
-                        let cardIndices = seq.Cards.map((card) => localPlayer.Hand!.Cards.indexOf(card))
-                        this.GameState.PlayCards(this.GameState.LocalPlayer(), seq)
-                        render.Destroy()
-                        connections.forEach((conn) => {
-                            conn.Disconnect()
-                        })
-
-                        resolve(cardIndices)
-                        this.UpdateHand()
-                    }
-                }))
-            }
+            askPlay.SendToServer(serialized)
         })
     }
 }

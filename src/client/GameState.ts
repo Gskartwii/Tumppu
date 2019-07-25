@@ -42,8 +42,7 @@ export function DeserializeState(serializedState: ISerializedGameState): LocalGa
 
     if (serializedState.CurrentCombo !== undefined) {
         let comboCards = serializedState.CurrentCombo.map((card) => state.DeserializeCard(card))
-        let combo = new CardSequence
-        combo.Cards = comboCards
+        let combo = new CardSequence(comboCards)
         state.CurrentCombo = combo
     }
 
@@ -56,10 +55,6 @@ export function DeserializeState(serializedState: ISerializedGameState): LocalGa
 }
 
 export class LocalGameState extends GameState {
-    constructor(players: Array<TumppuPlayer>) {
-        super(players)
-    }
-
     public LocalPlayer(): TumppuPlayer {
         return this.Players.find((player) => player instanceof RealPlayer && player.Player === localPlayer)!
     }
