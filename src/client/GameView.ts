@@ -42,14 +42,16 @@ class SequencePlayHandler {
     private handRender: RenderCardSet
     private queueRender: RenderCardSet
     private backFrame: GuiBase2d
+    private playTarget: Frame
 
     private animationPromise?: Promise<void>
 
-    constructor(state: LocalGameState, handRender: RenderCardSet, queueRender: RenderCardSet, backFrame: GuiBase2d) {
+    constructor(state: LocalGameState, handRender: RenderCardSet, queueRender: RenderCardSet, backFrame: GuiBase2d, playTarget: Frame) {
         this.GameState = state
         this.handRender = handRender
         this.queueRender = queueRender
         this.backFrame = backFrame
+        this.playTarget = playTarget
     }
 
     private queueAnimation(animation: () => Promise<void>): void {
@@ -62,6 +64,36 @@ class SequencePlayHandler {
 
     private transformAbsolutePosition(pos: Vector2): Vector2 {
         return pos.sub(this.backFrame.AbsolutePosition)
+    }
+
+    private tweenWithBackFrame(cards: Array<[Card, TextButton]>, oldPositions: Map<TextButton, Vector2>, newPositions: Map<TextButton, Vector2>, oldSizes: Map<TextButton, Vector2>, newSize: Vector2): Array<Promise<void>> {
+        let tweensResolved = []
+        for (let [card, render] of cards) {
+            render.ZIndex = MovingCardZIndex
+            let oldPosition = oldPositions.get(render)!
+            let oldSize = oldSizes.get(render)!
+            let newPosition = newPositions.get(render)!
+            render.Position = new UDim2(0, oldPosition.X, 0, oldPosition.Y)
+            render.Size = new UDim2(0, oldSize.X, 0, oldSize.Y)
+            render.Parent = this.backFrame
+
+            let tween = TweenService.Create(
+                render,
+                QueueMoveTweenInfo,
+                {
+                    Position: new UDim2(0, newPosition.X, 0, newPosition.Y),
+                    Size: new UDim2(0, newSize.X, 0, newSize.Y),
+                }
+            )
+            tween.Play()
+            tweensResolved.push(new Promise((resolve, reject) => {
+                Promise.spawn(() => {
+                    tween.Completed.Wait()
+                    resolve()
+                })
+            }))
+        }
+        return tweensResolved
     }
 
     private swapCardRenders(cards: Array<[Card, TextButton]>, from: RenderCardSet, to: RenderCardSet): Promise<void> {
@@ -86,32 +118,7 @@ class SequencePlayHandler {
                 return map
             }, new Map<TextButton, number>())
 
-            let tweensResolved = []
-            for (let [card, render] of cards) {
-                render.ZIndex = MovingCardZIndex
-                let oldPosition = oldPositions.get(render)!
-                let oldSize = oldSizes.get(render)!
-                let newPosition = newPositions.get(render)!
-                render.Position = new UDim2(0, oldPosition.X, 0, oldPosition.Y)
-                render.Size = new UDim2(0, oldSize.X, 0, oldSize.Y)
-                render.Parent = this.backFrame
-
-                let tween = TweenService.Create(
-                    render,
-                    QueueMoveTweenInfo,
-                    {
-                        Position: new UDim2(0, newPosition.X, 0, newPosition.Y),
-                        Size: new UDim2(0, newSize.X, 0, newSize.Y),
-                    }
-                )
-                tween.Play()
-                tweensResolved.push(new Promise((resolve, reject) => {
-                    Promise.spawn(() => {
-                        tween.Completed.Wait()
-                        resolve()
-                    })
-                }))
-            }
+            let tweensResolved = this.tweenWithBackFrame(cards, oldPositions, newPositions, oldSizes, newSize)
 
             Promise.all(tweensResolved).then(() => {
                 for (let [card, render] of cards) {
@@ -122,7 +129,7 @@ class SequencePlayHandler {
                 }
 
                 Promise.spawn(() => {
-                    wait()
+                    wait() // Why is this needed? The card positions might go haywire without it
                     resolve()
                 })
             })
@@ -194,6 +201,47 @@ class SequencePlayHandler {
         this.queueConnections.set(render, thisConnection)
     }
 
+    private animatePlayQueue(): void {
+        // this.PlayQueue.Cards may get overridden; save it in a closure
+        let oldCards = this.PlayQueue.Cards
+        this.queueAnimation(() => {
+            const cards = oldCards.reduce((map, card) => {
+                map.set(card, this.queueRender.CardRenders.get(card)!)
+                return map
+            }, new Map<Card, TextButton>())
+            const oldPositions = cards.entries().reduce((map, [card, render]) => {
+                map.set(render, this.transformAbsolutePosition(render.AbsolutePosition))
+                return map
+            }, new Map<TextButton, Vector2>())
+
+            let target = this.playTarget.FindFirstChild<Frame>("PlayedCard")!
+            const newPosition = this.transformAbsolutePosition(target.AbsolutePosition)
+            const newPositions = cards.entries().reduce((map, [card, render]) => {
+                map.set(render, newPosition)
+                return map
+            }, new Map<TextButton, Vector2>())
+            const oldSizes = cards.entries().reduce((map, [card, render]) => {
+                map.set(render, render.AbsoluteSize)
+                return map
+            }, new Map<TextButton, Vector2>())
+            const newSize = target.AbsoluteSize
+
+            this.queueRender.Hand = []
+            this.queueRender.DisownCards(oldCards)
+
+            let tweensResolved = this.tweenWithBackFrame(cards.entries(), oldPositions, newPositions, oldSizes, newSize)
+
+            return new Promise((resolve, reject) => {
+                Promise.all(tweensResolved).then(() => {
+                    resolve()
+                    for (let [card, render] of cards) {
+                        render.Destroy()
+                    }
+                })
+            })
+        })
+    }
+
     public AskPlay(): Promise<CardSequence> {
         for (let [card, render] of this.handRender.CardRenders) {
             this.bindHandCard(card, render)
@@ -203,6 +251,7 @@ class SequencePlayHandler {
             let connection = UserInputService.InputBegan.Connect((input) => {
                 if (input.UserInputType === Enum.UserInputType.Keyboard
                     && input.KeyCode === Enum.KeyCode.P) {
+                        this.animatePlayQueue()
                         connection.Disconnect()
                         for (let [_, conn] of this.queueConnections) {
                             conn.Disconnect()
@@ -241,7 +290,7 @@ export class GameView {
         this.queueRender = new RenderCardSet([], options.queueFrame)
         this.queueRender.UseStandardOrder = false
         this.deckRender = new RenderDecks(options.deckContainer)
-        this.playHandler = new SequencePlayHandler(options.state, this.handRender, this.queueRender, options.baseFrame)
+        this.playHandler = new SequencePlayHandler(options.state, this.handRender, this.queueRender, options.baseFrame, options.deckContainer)
     }
 
     public AskPlay(): Promise<CardSequence> {
