@@ -43,7 +43,7 @@ export class NetworkManager {
             print("tellplay cards", deserializedCards.map((card) => card.Name()).join())
             this.GameState.PlayCards(player, seq)
 
-            this.gameView.UpdateTopCard()
+            this.gameView.OpponentPlayedCards(player, seq)
         })
 
         askPlay.Connect(async () => {
@@ -53,8 +53,6 @@ export class NetworkManager {
             print("playing cards", playedCards.Cards.map((card) => card.Name()).join())
             let serialized = playedCards.Cards.map((card) => player.Hand!.Cards.indexOf(card))
             this.GameState.PlayCards(player, playedCards)
-
-            this.gameView.UpdateTopCard()
 
             askPlay.SendToServer(serialized)
         })

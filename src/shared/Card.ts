@@ -270,7 +270,7 @@ export class CardSequence {
         }
 
         let previousCard = this.Cards[0]
-        for (let card of this.Cards.splice(1)) {
+        for (let card of this.Cards.slice(1)) {
             if (!card.CanSequence(previousCard, comboMode)) {
                 return false
             }

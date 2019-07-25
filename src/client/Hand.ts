@@ -2,7 +2,7 @@ import { Card, NormalCardType, NormalCard } from "shared/Card";
 import { RenderCard } from "./Card";
 
 const CardOffsetMaxScale = 0.238 / 2
-const CardAspectRatio = 2.5/3.5
+export const CardAspectRatio = 2.5/3.5
 
 const HandCardTweenInfo = new TweenInfo(
     1/4, // time
