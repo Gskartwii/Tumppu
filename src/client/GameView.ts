@@ -480,12 +480,13 @@ export class GameView {
         baseFrame: GuiBase2d,
         handFrame: Frame,
         queueFrame: Frame,
-        deckContainer: Frame}) {
+        deckContainer: Frame,
+        mouse: Mouse}) {
         this.GameState = options.state
 
         this.animationQueue = new AnimationQueue
-        this.handRender = new RenderCardSet(options.state.LocalPlayer().Hand!.Cards, options.handFrame)
-        this.queueRender = new RenderCardSet([], options.queueFrame)
+        this.handRender = new RenderCardSet(options.state.LocalPlayer().Hand!.Cards, options.handFrame, options.mouse)
+        this.queueRender = new RenderCardSet([], options.queueFrame, options.mouse)
         this.queueRender.UseStandardOrder = false
         this.deckRender = new RenderDecks(options.deckContainer)
         this.playHandler = new SequencePlayHandler(options.state, this.animationQueue, this.handRender, this.queueRender, options.baseFrame, options.deckContainer)

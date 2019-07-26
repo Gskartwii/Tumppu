@@ -1,13 +1,18 @@
 import { Card, NormalCardType, NormalCard } from "shared/Card";
 import { RenderCard } from "./Card";
 
-const CardOffsetMaxScale = 0.238 / 2
+const CardOffsetRatio = 1/2
 export const CardAspectRatio = 2.5/3.5
 
 const HandCardTweenInfo = new TweenInfo(
     1/4, // time
     Enum.EasingStyle.Quart,
     Enum.EasingDirection.InOut,
+)
+const MouseMoveTweenInfo = new TweenInfo(
+    1/15,
+    Enum.EasingStyle.Quad,
+    Enum.EasingDirection.Out,
 )
 
 const TweenService = game.GetService("TweenService")
@@ -17,10 +22,18 @@ export class RenderCardSet {
     UseStandardOrder: boolean = true
     private RenderFrame: Frame
     CardRenders: Map<Card, TextButton> = new Map()
+    Mouse: Mouse
 
-    constructor(hand: Array<Card>, frame: Frame) {
+    constructor(hand: Array<Card>, frame: Frame, mouse: Mouse) {
         this.Hand = hand
         this.RenderFrame = frame
+        this.Mouse = mouse
+
+        mouse.Move.Connect(() => {
+            if (!this.cardsFitWell()) {
+                this.tweenCardsToPosition(this.getCardRelativePositions(), MouseMoveTweenInfo)
+            }
+        })
     }
 
     private cardRendersInOrder(): Array<[Card, TextButton]> {
@@ -88,14 +101,95 @@ export class RenderCardSet {
         }
     }
 
+    private cardsFitWell(): boolean {
+        const frameWidth = this.RenderFrame.AbsoluteSize.X
+        const countCards = this.CardRenders.size()
+        const cardWidth = this.EstimateAbsoluteSize().X
+        const cardsWidth = cardWidth + (countCards - 1) * cardWidth * CardOffsetRatio
+
+        return frameWidth >= cardsWidth
+    }
+    
     private getCardAbsolutePositions(): Map<Card, Vector2> {
+        let sorted = this.cardRendersInOrder()
+
+        const countCards = sorted.size()
+        if (countCards === 0) {
+            return new Map()
+        }
+
         this.fixLayoutOrders()
+        const cardWidth = this.EstimateAbsoluteSize().X
+        const frameStartX = this.RenderFrame.AbsolutePosition.X
+        const frameWidth = this.RenderFrame.AbsoluteSize.X
+        const frameEndX = frameStartX + frameWidth
+        const frameStartY = this.RenderFrame.AbsolutePosition.Y
+        const frameEndY = frameStartY + this.RenderFrame.AbsoluteSize.Y
+        const mousePositionX = this.Mouse.X
+        const mousePositionY = this.Mouse.Y
+
+        if (this.cardsFitWell()) {
+            // deletgate calculations to a UIGridLayout with center alignment
+            return this.getAbsolutePositionsCenterAligned()
+        }
+
+        if (mousePositionX < frameStartX
+            || mousePositionX > frameEndX
+            || mousePositionY < frameStartY
+            || mousePositionY > frameEndY) {
+                // equal adjustments for everything
+                let positions = new Map<Card, Vector2>()
+                let i = 0
+                for (let [card, render] of sorted) {
+                    positions.set(card, new Vector2((i / (countCards - 1)) * (frameWidth - cardWidth) + frameStartX, frameStartY))
+                    i++
+                }
+                return positions
+            }
+
+        /*
+        need a function with the following properties:
+        [0, 1] -> [0, 1]
+        growth accelerates until certain point in domain, then decelartes
+
+        Let f(x) := -(-x-m)^2 + 1;
+        i(x) := \int f(x) dx;
+        n(x) := \frac {i(x)}{i(1)};
+        where x is the normalized index of a card and
+        m is the normalized x-position of the mouse.
+        Then n gives the normalized coordinates for the
+        card's position.
+        */
+        const normalizedMouseX = (mousePositionX - frameStartX) / (frameEndX - frameStartX)
+
+        let positions = new Map<Card, Vector2>()
+        let i = 0
+        for (let [card, render] of sorted) {
+            let normalizedIndex = i / (countCards - 1)
+            let normalizedPosition = (
+                (-1/3)*math.pow(normalizedIndex, 3)
+                + normalizedMouseX*math.pow(normalizedIndex, 2)
+                + (1 - math.pow(normalizedMouseX, 2))*normalizedIndex) / (
+                (-1/3)
+                + normalizedMouseX
+                + (1 - math.pow(normalizedMouseX, 2)))
+
+            positions.set(card, new Vector2(
+                normalizedPosition*(frameWidth - cardWidth) + frameStartX,
+                frameStartY,
+            ))
+            i++
+        }
+        return positions
+    }
+
+    private getAbsolutePositionsCenterAligned(): Map<Card, Vector2> {
         let layoutDelegate = new Instance("UIGridLayout")
         layoutDelegate.Name = "__LayoutDelegate"
 
         let cardSize = this.EstimateAbsoluteSize()
         layoutDelegate.CellSize = new UDim2(0, cardSize.X, 0, cardSize.Y)
-        layoutDelegate.CellPadding = new UDim2(-CardOffsetMaxScale, 0, 0, 0)
+        layoutDelegate.CellPadding = new UDim2(0, -CardOffsetRatio * cardSize.X, 0, 0)
         layoutDelegate.FillDirection = Enum.FillDirection.Horizontal
         layoutDelegate.HorizontalAlignment = Enum.HorizontalAlignment.Center
         layoutDelegate.Parent = this.RenderFrame
@@ -139,7 +233,7 @@ export class RenderCardSet {
         })
     }
 
-    private tweenCardsToPosition(newPositions: Map<Card, Vector2>): Promise<void> {
+    private tweenCardsToPosition(newPositions: Map<Card, Vector2>, info: TweenInfo = HandCardTweenInfo): Promise<void> {
         return new Promise((resolve, reject) => {
             let tweens: Array<Tween> = []
 
@@ -147,7 +241,7 @@ export class RenderCardSet {
                 let render = this.CardRenders.get(card)!
                 let tween = TweenService.Create(
                     render,
-                    HandCardTweenInfo,
+                    info,
                     {Position: new UDim2(0, newPosition.X, 0, newPosition.Y)}
                 )
                 tween.Play()

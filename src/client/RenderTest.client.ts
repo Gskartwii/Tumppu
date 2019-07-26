@@ -27,5 +27,6 @@ tellState.Connect((serializedState: ISerializedGameState) => {
         handFrame: handFrame,
         queueFrame: queueFrame,
         deckContainer: playedCardContainer,
+        mouse: localPlayer.GetMouse(),
     }))
 })
