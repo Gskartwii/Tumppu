@@ -23,9 +23,7 @@ export class NetworkManager {
 
             player.Hand!.AddCards(newCards)
 
-            if (player === state.LocalPlayer()) {
-                this.gameView.AddNewCards(newCards)
-            }
+            this.gameView.DrawCards(player, newCards)
 
             if (this.GameState.IsComboMode()) {
                 this.GameState.EndCombo()

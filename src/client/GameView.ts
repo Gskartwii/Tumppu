@@ -27,6 +27,7 @@ const OpponentData = new Map<number, Array<IOpponentData>>([
     [7, [LeftOpponent, TopLeftOpponent, MiddleLeftOpponent, MiddleRightOpponent, TopRightOpponent, RightOpponent]]
 ])
 
+const OpponentFrameZIndex = 10
 const OpponentFrameBackground = new Color3(1, 1, 1)
 const OpponentFrameBorder = new Color3(224, 224, 224)
 const OpponentFrameBorderSize = 2
@@ -57,6 +58,8 @@ const OpponentPlayTweenInfo = new TweenInfo(
     Enum.EasingDirection.InOut,
 )
 const OpponentPlaySequenceDelay = 1/15
+const OpponentDrawTweenInfo = OpponentPlayTweenInfo
+const OpponentDrawSequenceDelay = OpponentPlaySequenceDelay
 const PostPlayDelay = 1/8
 const MovingCardZIndex = 5
 
@@ -439,6 +442,7 @@ class OpponentRender {
         renderFrame.BackgroundColor3 = OpponentFrameBackground
         renderFrame.BorderColor3 = OpponentFrameBorder
         renderFrame.BorderSizePixel = OpponentFrameBorderSize
+        renderFrame.ZIndex = OpponentFrameZIndex
 
         let renderAspectRatioConstraint = new Instance("UIAspectRatioConstraint", renderFrame)
         renderAspectRatioConstraint.AspectRatio = OpponentFrameAspectRatio
@@ -482,23 +486,34 @@ class OpponentRender {
         renderFrame.Parent = this.baseFrame
     }
 
+    private getCardPosition(): Vector2 {
+        // place the card in the middle of the frame
+        // without setting the AnchorPoint
+        return new Vector2(this.RenderFrame!.AbsoluteSize.X, 0)
+            .sub(new Vector2(this.getCardSize().X, 0))
+            .div(new Vector2(2, 1))
+            .add(this.RenderFrame!.AbsolutePosition)
+    }
+
+    private getCardSize(): Vector2 {
+        const height = this.RenderFrame!.AbsoluteSize.Y
+        return new Vector2(height * CardAspectRatio, height)
+    }
+
     public AnimatePlayCards(seq: CardSequence): Promise<Array<Instance>> {
         return new Promise((resolve) => {
             let trueTarget = this.targetFrame.FindFirstChild<Frame>("PlayedCard")!
+
+            let oldPosition = this.getCardPosition()
+            let newPosition = trueTarget.AbsolutePosition.sub(this.baseFrame.AbsolutePosition)
+            let oldSize = this.getCardSize()
+            let newSize = trueTarget.AbsoluteSize
+
             let renders = seq.Cards.reduce((map, card) => {
                 let render = new RenderCard(card).FrontAsFrame()
-                render.Size = new UDim2(CardAspectRatio * OpponentFrameAspectRatio, 0, 1, 0)
-                render.AnchorPoint = new Vector2(.5, .5)
-                render.Position = new UDim2(.5, 0, .5, 0)
-                render.Parent = this.RenderFrame!
                 map.set(card, render)
                 return map
             }, new Map<Card, Frame>())
-
-            let oldPosition = renders.get(seq.Cards[0])!.AbsolutePosition
-            let newPosition = trueTarget.AbsolutePosition.sub(this.baseFrame.AbsolutePosition)
-            let oldSize = renders.get(seq.Cards[0])!.AbsoluteSize
-            let newSize = trueTarget.AbsoluteSize
 
             Promise.spawn(() => {
                 // iterate over this to ensure correct order
@@ -537,6 +552,62 @@ class OpponentRender {
 
                 Promise.all(tweensResolved).then(() => {
                     resolve(instances)
+                })
+            })
+        })
+    }
+
+    public AnimateDrawCards(cards: Array<Card>): Promise<void> {
+        return new Promise((resolve) => {
+            let renders = cards.reduce((map, card) => {
+                map.set(card, new RenderCard(card).BackAsFrame())
+                return map
+            }, new Map<Card, Frame>())
+
+            const source = this.targetFrame.FindFirstChild<Frame>("Draw")!
+            const oldPosition = source.AbsolutePosition
+            const oldSize = source.AbsoluteSize
+            const newPosition = this.getCardPosition()
+            const newSize = this.getCardSize()
+
+            Promise.spawn(() => {
+                let i = 0
+                let tweensResolved = []
+                let instances: Array<Instance> = []
+                for (let card of cards) {
+                    let render = renders.get(card)!
+                    instances.push(render)
+                    render.Position = new UDim2(0, oldPosition.X, 0, oldPosition.Y)
+                    render.Size = new UDim2(0, oldSize.X, 0, oldSize.Y)
+                    render.Parent = this.baseFrame
+                    render.ZIndex = MovingCardZIndex
+
+                    let tween = TweenService.Create(
+                        render,
+                        OpponentDrawTweenInfo,
+                        {
+                            Position: new UDim2(0, newPosition.X, 0, newPosition.Y),
+                            Size: new UDim2(0, newSize.X, 0, newSize.Y),
+                        }
+                    )
+                    tween.Play()
+
+                    wait(OpponentDrawSequenceDelay)
+                    i++
+
+                    tweensResolved.push(new Promise((resolve) => {
+                        Promise.spawn(() => {
+                            tween.Completed.Wait()
+                            resolve()
+                        })
+                    }))
+                }
+
+                Promise.all(tweensResolved).then(() => {
+                    for (let instance of instances) {
+                        instance.Destroy()
+                    }
+                    resolve()
                 })
             })
         })
@@ -602,9 +673,13 @@ export class GameView {
         })
     }
 
-    public AddNewCards(cards: Array<Card>): void {
+    public DrawCards(player: TumppuPlayer, cards: Array<Card>): void {
         this.animationQueue.QueueAnimation(() => {
-            return this.playHandler.AnimateDrawCards(cards)
+            if (player === this.GameState.LocalPlayer()) {
+                return this.playHandler.AnimateDrawCards(cards)
+            } else {
+                return this.opponentRenders.get(player)!.AnimateDrawCards(cards)
+            }
         })
     }
 
