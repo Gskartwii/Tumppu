@@ -56,6 +56,7 @@ const OpponentPlayTweenInfo = new TweenInfo(
     Enum.EasingStyle.Quart,
     Enum.EasingDirection.InOut,
 )
+const OpponentPlaySequenceDelay = 1/15
 const PostPlayDelay = 1/8
 const MovingCardZIndex = 5
 
@@ -481,39 +482,62 @@ class OpponentRender {
         renderFrame.Parent = this.baseFrame
     }
 
-    public AnimatePlayCards(seq: CardSequence): Promise<Instance> {
-        let lastCard = seq.Cards[seq.Cards.size() - 1]
-        let trueTarget = this.targetFrame.FindFirstChild<Frame>("PlayedCard")!
-        let render = new RenderCard(lastCard).FrontAsFrame()
-        render.Size = new UDim2(CardAspectRatio * OpponentFrameAspectRatio, 0, 1, 0)
-        render.AnchorPoint = new Vector2(.5, .5)
-        render.Position = new UDim2(.5, 0, .5, 0)
-        render.Parent = this.RenderFrame!
-
-        let oldPosition = render.AbsolutePosition.sub(this.baseFrame.AbsolutePosition)
-        let newPosition = trueTarget.AbsolutePosition.sub(this.baseFrame.AbsolutePosition)
-        let oldSize = render.AbsoluteSize
-        let newSize = trueTarget.AbsoluteSize
-
-        render.AnchorPoint = new Vector2(0, 0)
-        render.Position = new UDim2(0, oldPosition.X, 0, oldPosition.Y)
-        render.Size = new UDim2(0, oldSize.X, 0, oldSize.Y)
-        render.Parent = this.baseFrame
-        render.ZIndex = MovingCardZIndex
-
-        let tween = TweenService.Create(
-            render,
-            OpponentPlayTweenInfo,
-            {
-                Position: new UDim2(0, newPosition.X, 0, newPosition.Y),
-                Size: new UDim2(0, newSize.X, 0, newSize.Y),
-            }
-        )
-        tween.Play()
-
+    public AnimatePlayCards(seq: CardSequence): Promise<Array<Instance>> {
         return new Promise((resolve) => {
-            tween.Completed.Connect(() => {
-                resolve(render)
+            let trueTarget = this.targetFrame.FindFirstChild<Frame>("PlayedCard")!
+            let renders = seq.Cards.reduce((map, card) => {
+                let render = new RenderCard(card).FrontAsFrame()
+                render.Size = new UDim2(CardAspectRatio * OpponentFrameAspectRatio, 0, 1, 0)
+                render.AnchorPoint = new Vector2(.5, .5)
+                render.Position = new UDim2(.5, 0, .5, 0)
+                render.Parent = this.RenderFrame!
+                map.set(card, render)
+                return map
+            }, new Map<Card, Frame>())
+
+            let oldPosition = renders.get(seq.Cards[0])!.AbsolutePosition
+            let newPosition = trueTarget.AbsolutePosition.sub(this.baseFrame.AbsolutePosition)
+            let oldSize = renders.get(seq.Cards[0])!.AbsoluteSize
+            let newSize = trueTarget.AbsoluteSize
+
+            Promise.spawn(() => {
+                // iterate over this to ensure correct order
+                let i = 0
+                let tweensResolved = []
+                let instances: Array<Instance> = []
+                for (let card of seq.Cards) {
+                    let render = renders.get(card)!
+                    instances.push(render)
+                    render.AnchorPoint = new Vector2(0, 0)
+                    render.Position = new UDim2(0, oldPosition.X, 0, oldPosition.Y)
+                    render.Size = new UDim2(0, oldSize.X, 0, oldSize.Y)
+                    render.Parent = this.baseFrame
+                    render.ZIndex = MovingCardZIndex + i
+
+                    let tween = TweenService.Create(
+                        render,
+                        OpponentPlayTweenInfo,
+                        {
+                            Position: new UDim2(0, newPosition.X, 0, newPosition.Y),
+                            Size: new UDim2(0, newSize.X, 0, newSize.Y),
+                        }
+                    )
+                    tween.Play()
+
+                    wait(OpponentPlaySequenceDelay)
+                    i++
+
+                    tweensResolved.push(new Promise((resolve) => {
+                        Promise.spawn(() => {
+                            tween.Completed.Wait()
+                            resolve()
+                        })
+                    }))
+                }
+
+                Promise.all(tweensResolved).then(() => {
+                    resolve(instances)
+                })
             })
         })
     }
@@ -587,9 +611,11 @@ export class GameView {
     public OpponentPlayedCards(player: TumppuPlayer, cards: CardSequence): void {
         this.animationQueue.QueueAnimation(() => {
             return new Promise((resolve) => {
-                this.opponentRenders.get(player)!.AnimatePlayCards(cards).then((animatedCard) => {
+                this.opponentRenders.get(player)!.AnimatePlayCards(cards).then((animatedCards) => {
                     this.deckRender.RenderPlayedCard(cards.Cards[cards.Cards.size() - 1])
-                    animatedCard.Destroy()
+                    for (let card of animatedCards) {
+                        card.Destroy()
+                    }
 
                     Promise.spawn(() => {
                         wait(PostPlayDelay)
