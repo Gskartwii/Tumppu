@@ -104,6 +104,8 @@ class SequencePlayHandler {
     GameState: LocalGameState
     private handConnections: Array<RBXScriptConnection> = []
     private queueConnections: Map<TextButton, RBXScriptConnection> = new Map()
+    private playAllConnection?: RBXScriptConnection
+    private pendingResolve?: (cards: CardSequence) => void
 
     private handRender: RenderCardSet
     private queueRender: RenderCardSet
@@ -169,6 +171,7 @@ class SequencePlayHandler {
             }, new Map<TextButton, Vector2>())
             const newSize = to.EstimateAbsoluteSize()
 
+            // Note: changes parent
             to.MakeSpaceForCardRenders(new Map(cards))
             from.DisownCards(cards.map(([card, render]) => card))
 
@@ -208,8 +211,33 @@ class SequencePlayHandler {
         return this.swapCardRenders(cards, this.queueRender, this.handRender)
     }
 
+    private animateHandToDeck(card: Card, render: TextButton): Promise<void> {
+        return new Promise((resolve) => {
+            const cards = new Map([[card, render]])
+            const oldPositions = new Map([[render, this.transformAbsolutePosition(render.AbsolutePosition)]])
+            let target = this.playTarget.FindFirstChild<Frame>("PlayedCard")!
+            const newPositions = new Map([[render, this.transformAbsolutePosition(target.AbsolutePosition)]])
+            const oldSizes = new Map([[render, render.AbsoluteSize]])
+            const newSize = target.AbsoluteSize
+
+            render.Parent = undefined
+            this.handRender.DisownCards([card])
+
+            let tweensResolved = this.tweenWithBackFrame(cards.entries(), oldPositions, newPositions, oldSizes, newSize)
+
+            Promise.all(tweensResolved).then(() => {
+                Promise.spawn(() => {
+                    wait(PostPlayDelay)
+
+                    resolve()
+                    render.Destroy()
+                })
+            })
+        })
+    }
+
     private bindHandCard(card: Card, render: TextButton) {
-        let thisConnection: RBXScriptConnection
+        let thisConnection: RBXScriptConnection, thisQuickPlayConnection: RBXScriptConnection
         render.Active = true
         thisConnection = render.Activated.Connect(() => {
             if (this.PlayQueue.Cards.isEmpty()) {
@@ -226,7 +254,9 @@ class SequencePlayHandler {
             this.PlayQueue.Cards.push(card)
             render.Active = false
             thisConnection.Disconnect()
+            thisQuickPlayConnection.Disconnect()
             this.handConnections.remove(this.handConnections.indexOf(thisConnection))
+            this.handConnections.remove(this.handConnections.indexOf(thisQuickPlayConnection))
 
             this.AnimationQueue.QueueAnimation(async () => {
                 await this.animateHandToQueue([[card, render]])
@@ -234,6 +264,25 @@ class SequencePlayHandler {
             })
         })
         this.handConnections.push(thisConnection)
+
+        thisQuickPlayConnection = render.MouseButton2Click.Connect(() => {
+            if (!this.PlayQueue.Cards.isEmpty()) {
+                return
+            }
+            if (!this.GameState.CanPlayCards(this.GameState.LocalPlayer(), new CardSequence([card]))) {
+                return
+            }
+
+            this.AnimationQueue.QueueAnimation(async () => {
+                await this.animateHandToDeck(card, render)
+            })
+
+            if (this.pendingResolve !== undefined) {
+                this.pendingResolve(new CardSequence([card]))
+            }
+            this.cleanup()
+        })
+        this.handConnections.push(thisQuickPlayConnection)
     }
 
     private bindQueueCard(card: Card, render: TextButton) {
@@ -309,13 +358,31 @@ class SequencePlayHandler {
         })
     }
 
+    private cleanup(): void {
+        this.pendingResolve = undefined
+        if (this.playAllConnection !== undefined) {
+            this.playAllConnection.Disconnect()
+        }
+        for (let [_, conn] of this.queueConnections) {
+            conn.Disconnect()
+        }
+        this.queueConnections = new Map()
+        for (let conn of this.handConnections) {
+            conn.Disconnect()
+        }
+        this.handConnections = []
+
+        this.PlayQueue.Cards = []
+    }
+
     public AskPlay(): Promise<CardSequence> {
         return new Promise((resolve, reject) => {
             for (let [card, render] of this.handRender.CardRenders) {
                 this.bindHandCard(card, render)
             }
 
-            let connection = UserInputService.InputBegan.Connect((input) => {
+            this.pendingResolve = resolve
+            this.playAllConnection = UserInputService.InputBegan.Connect((input) => {
                 if (input.UserInputType === Enum.UserInputType.Keyboard
                     && input.KeyCode === Enum.KeyCode.P) {
                         // don't try to play an invalid sequence
@@ -324,19 +391,10 @@ class SequencePlayHandler {
                         }
 
                         this.animatePlayQueue()
-                        connection.Disconnect()
-                        for (let [_, conn] of this.queueConnections) {
-                            conn.Disconnect()
-                        }
-                        this.queueConnections = new Map()
-                        for (let conn of this.handConnections) {
-                            conn.Disconnect()
-                        }
-                        this.handConnections = []
-
                         // must make a copy here
-                        resolve(new CardSequence(this.PlayQueue.Cards))
-                        this.PlayQueue.Cards = []
+                        let seq = new CardSequence(this.PlayQueue.Cards)
+                        this.cleanup()
+                        resolve(seq)
                 }
             })
         })
