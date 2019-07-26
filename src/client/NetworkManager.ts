@@ -15,7 +15,7 @@ export class NetworkManager {
         this.GameState = state
         this.gameView = view
 
-        this.gameView.UpdateTopCard()
+        this.gameView.DrawTopCard(this.GameState.DiscardPile[this.GameState.DiscardPile.size() - 1])
 
         tellDraw.Connect((playerIndex: number, cards: number | Array<ISerializedCard>) => {
             let player = state.DeserializePlayer(playerIndex)

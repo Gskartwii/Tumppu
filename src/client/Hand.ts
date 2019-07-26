@@ -22,6 +22,7 @@ export class RenderCardSet {
     UseStandardOrder: boolean = true
     private RenderFrame: Frame
     CardRenders: Map<Card, TextButton> = new Map()
+    private ownedCardRenders: Map<TextButton, boolean> = new Map()
     Mouse: Mouse
 
     constructor(hand: Array<Card>, frame: Frame, mouse: Mouse) {
@@ -30,10 +31,18 @@ export class RenderCardSet {
         this.Mouse = mouse
 
         mouse.Move.Connect(() => {
-            if (!this.cardsFitWell()) {
+            if (!this.canDelegate()) {
                 this.tweenCardsToPosition(this.getCardRelativePositions(), MouseMoveTweenInfo)
             }
         })
+    }
+
+    private ownsCard(card: Card): boolean {
+        let render = this.CardRenders.get(card)
+        if (render === undefined) {
+            return false
+        }
+        return true === this.ownedCardRenders.get(render)
     }
 
     private cardRendersInOrder(): Array<[Card, TextButton]> {
@@ -101,7 +110,7 @@ export class RenderCardSet {
         }
     }
 
-    private cardsFitWell(): boolean {
+    private canDelegate(): boolean {
         const frameWidth = this.RenderFrame.AbsoluteSize.X
         const countCards = this.CardRenders.size()
         const cardWidth = this.EstimateAbsoluteSize().X
@@ -128,7 +137,7 @@ export class RenderCardSet {
         const mousePositionX = this.Mouse.X
         const mousePositionY = this.Mouse.Y
 
-        if (this.cardsFitWell()) {
+        if (this.canDelegate()) {
             // deletgate calculations to a UIGridLayout with center alignment
             return this.getAbsolutePositionsCenterAligned()
         }
@@ -141,7 +150,7 @@ export class RenderCardSet {
                 let positions = new Map<Card, Vector2>()
                 let i = 0
                 for (let [card, render] of sorted) {
-                    positions.set(card, new Vector2((i / (countCards - 1)) * (frameWidth - cardWidth) + frameStartX, frameStartY))
+                    positions.set(card, new Vector2((i / (countCards - 1)) * (frameWidth - cardWidth * CardOffsetRatio) + frameStartX, frameStartY))
                     i++
                 }
                 return positions
@@ -175,7 +184,7 @@ export class RenderCardSet {
                 + (1 - math.pow(normalizedMouseX, 2)))
 
             positions.set(card, new Vector2(
-                normalizedPosition*(frameWidth - cardWidth) + frameStartX,
+                normalizedPosition*(frameWidth - cardWidth * CardOffsetRatio) + frameStartX,
                 frameStartY,
             ))
             i++
@@ -216,7 +225,6 @@ export class RenderCardSet {
         let cardSizeVec = this.EstimateAbsoluteSize()
         let cardSize = new UDim2(0, cardSizeVec.X, 0, cardSizeVec.Y)
         this.RenderFrame.ClearAllChildren()
-        this.CardRenders = new Map()
 
         let cards = this.Hand
         this.CardRenders = cards.reduce((map, card, index) => {
@@ -238,6 +246,10 @@ export class RenderCardSet {
             let tweens: Array<Tween> = []
 
             for (let [card, newPosition] of newPositions) {
+                if (!this.ownsCard(card)) {
+                    continue
+                }
+
                 let render = this.CardRenders.get(card)!
                 let tween = TweenService.Create(
                     render,
@@ -274,6 +286,9 @@ export class RenderCardSet {
         }, new Map<Card, TextButton>())
 
         this.CardRenders = new Map(this.CardRenders.entries().concat(newRenders.entries()))
+        for (let [card, render] of newRenders) {
+            this.ownedCardRenders.set(render, true)
+        }
         this.tweenCardsToPosition(this.getCardRelativePositions())
 
         return newRenders
@@ -292,7 +307,8 @@ export class RenderCardSet {
         this.tweenCardsToPosition(positions)
     }
 
-    public AddRender(render: TextButton): void {
+    public AddRender(card: Card, render: TextButton): void {
+        this.ownedCardRenders.set(render, true)
         render.Parent = this.RenderFrame
     }
 
@@ -332,6 +348,8 @@ export class RenderCardSet {
 
     public DisownCards(cards: Array<Card>): void {
         for (let card of cards) {
+            let render = this.CardRenders.get(card)!
+            this.ownedCardRenders.delete(render)
             this.CardRenders.delete(card)
         }
 

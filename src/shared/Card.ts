@@ -318,6 +318,33 @@ export class CardSequence {
     }
 
     public CanAddCard(card: Card, isComboMode: boolean): boolean {
-        return this.IsValid(isComboMode) && card.CanSequence(this.Cards[this.Cards.size() - 1], isComboMode || this.IsComboStartSequence())
+        if (this.Cards.size() === 0) {
+            if (isComboMode) {
+                return card.IsComboCard()
+            }
+            return true
+        }
+
+        let lastCard = this.Cards[this.Cards.size() - 1]
+        if (isComboMode) {
+            if (!this.IsValid(true)) {
+                return false
+            }
+            if (!card.CanSequence(lastCard, true)) {
+                return false
+            }
+            return true
+        }
+
+        // be a bit more lenient outside combomode: allow the player
+        // to build combo start sequences
+
+        // whether this is a combo sequence attempt or not is determined by checking
+        // if the last card can be a combo card
+        // if not, we use non-combo sequencing rules
+        // if yes, we use combo sequencing rules
+        // the sequences this yields might be invalid outside combo mode
+        // if they don't contain a starting card
+        return card.CanSequence(lastCard, lastCard.IsComboCard())
     }
 }

@@ -130,18 +130,22 @@ export class GameState {
 
     public CanPlayCards(player: TumppuPlayer, cards: Card.CardSequence): boolean {
         if (this.CurrentPlayer() !== player) {
+            print("wrong player")
             return false
         }
         if (!cards.IsValid(this.IsComboMode())) {
+            print("nonvalid seq")
             return false
         }
         if (!cards.Cards[0].CanPlay(this.LastCard(), this.IsComboMode())) {
+            print("doesn't fit with previous")
             return false
         }
 
         // rule 7.f.ii
-        if (cards.Cards.every((card) => card.CardType === Card.WildcardCardType.Exchange)
+        if (cards.Cards.every((card) => card.IsWildcard() && card.CardType === Card.WildcardCardType.Exchange)
             && cards.Cards.size() === player.Hand!.Cards.size()) {
+            print("player would run out")
             return false
         }
 
@@ -241,7 +245,8 @@ export class GameState {
         case Card.NormalCardType.Reverse:
             // rule 7.a.iv
             if (this.IsDuel()) {
-                this.GiveTurn(player)
+                // the turn will be advanced below, too
+                this.AdvanceTurn()
             } else if (cards.Cards.size() % 2 === 1) {
                 this.FlipDirection()
             }
@@ -249,7 +254,9 @@ export class GameState {
         case Card.NormalCardType.Skip:
             // rule 7.a.iv
             if (this.IsDuel()) {
-                this.GiveTurn(player)
+                // the turn will be advanced below, too
+                // advance exactly once
+                this.AdvanceTurn()
             } else {
                 const numCards = cards.Cards.size()
                 for (let i = 0; i < numCards; i++) {
