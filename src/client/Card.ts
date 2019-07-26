@@ -229,7 +229,6 @@ export class RenderCard {
         text.TextColor3 = BackTextColor
         text.Rotation = BackTextRotation
         text.TextScaled = true
-        text.TextWrapped = false
         text.BackgroundTransparency = 1
 
         return result
