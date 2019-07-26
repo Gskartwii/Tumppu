@@ -127,7 +127,7 @@ export class ServerGameState extends GameState {
     public EndCombo(): void {
         // TODO: democracy?
         (this.CurrentPlayer()).DrawCards(this.CurrentCombo!.DrawValue(), this)
-        this.AdvanceTurn()
+        super.EndCombo()
     }
 
     public BroadcastDraw(drawingPlayer: ServerPlayer, cards: Array<Card>): void {
@@ -140,7 +140,6 @@ export class ServerGameState extends GameState {
         super.PlayCards(player, cards)
 
         for (let tellTo of this.playersExcept(player as ServerPlayer)) {
-            print("telling play to", tellTo, player)
             tellTo.TellPlay(player, cards, this)
         }
     }

@@ -26,6 +26,10 @@ export class NetworkManager {
             if (player === state.LocalPlayer()) {
                 this.gameView.AddNewCards(newCards)
             }
+
+            if (this.GameState.IsComboMode()) {
+                this.GameState.EndCombo()
+            }
         })
 
         tellPlay.Connect((playerIndex: number, cards: Array<ISerializedCard>) => {

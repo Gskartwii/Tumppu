@@ -12,7 +12,6 @@ export class Hand {
     }
 
     public RemoveCards(cards: Array<Card.Card>): void {
-        print("removing cards", this.Cards.filter((card) => cards.includes(card)).map((card) => card.Name()).join())
         this.Cards = this.Cards.filter((card) => !cards.includes(card))
     }
 

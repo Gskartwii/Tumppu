@@ -38,7 +38,7 @@ export class GameState {
                     allCards.push(new Card.NormalCard(color, Card.NormalCardType.Number, j))
                 }
 
-                //allCards.push(new Card.NormalCard(color, Card.NormalCardType.Draw2))
+                allCards.push(new Card.NormalCard(color, Card.NormalCardType.Draw2))
                 allCards.push(new Card.NormalCard(color, Card.NormalCardType.Reverse))
                 allCards.push(new Card.NormalCard(color, Card.NormalCardType.Skip))
             }
@@ -313,6 +313,7 @@ export class GameState {
 
     public EndCombo(): void {
         this.CurrentCombo = undefined
+        this.AdvanceTurn()
     }
 
     public DeserializePlayer(index: number): TumppuPlayer {
