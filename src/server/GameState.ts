@@ -3,19 +3,19 @@ import { Color, Card, Wildcard, WildcardCardType, CardSequence } from 'shared/Ca
 import { TumppuPlayer, TargetedWildcard } from 'shared/Player';
 
 export interface ServerPlayer extends TumppuPlayer {
-    AskPlay(state: GameState): Promise<CardSequence>
-    AskDraw(state: GameState): Promise<boolean>
+    AskPlay(state: GameState, canDraw: boolean): Promise<CardSequence | boolean>
     AskColor(state: GameState): Promise<Color>
     AskVote(state: GameState): Promise<TumppuPlayer>
+    AskReady(): Promise<void>
 
     TellState(state: GameState): void
     TellPlay(player: TumppuPlayer, cards: CardSequence, state: GameState): void
-    TellDraw(player: TumppuPlayer, cards: Array<Card>, state: GameState): void
+    TellDraw(player: TumppuPlayer, cards: Array<Card>, endCombo: boolean, state: GameState): void
     TellColor(color: Color, state: GameState): void
     TellVoteCompleted(votes: Map<TumppuPlayer, TumppuPlayer>, state: GameState): void
     TellHand(player: TumppuPlayer, state: GameState): void
 
-    DrawCards(n: number, state: ServerGameState): Array<Card>
+    DrawCards(n: number, endCombo: boolean, state: ServerGameState): Array<Card>
 }
 
 export class ServerGameState extends GameState {
@@ -35,18 +35,22 @@ export class ServerGameState extends GameState {
         }
         this.DiscardPile = [startingCard]
 
+        let toWait = []
         for (let player of this.Players) {
             player.TellState(this)
+            toWait.push(player.AskReady())
         }
 
         // this may cause Draw() to occur, so we call it after announcing the state
-        this.handleStartingCard(startingCard).then(() => {
-            for (let player of players) {
-                player.DrawCards(7, this)
-            }
-            
-            // don't implement jump-in rules yet
-            this.AskPlay()
+        Promise.all(toWait).then(() => {
+            this.handleStartingCard(startingCard).then(() => {
+                for (let player of players) {
+                    player.DrawCards(7, false, this)
+                }
+                
+                // don't implement jump-in rules yet
+                this.AskPlay()
+            })
         })
     }
 
@@ -77,16 +81,16 @@ export class ServerGameState extends GameState {
                     // Once the target player is in place, check if we need to draw cards
                     switch (card.CardType) {
                     case WildcardCardType.Dictator:
-                        ((card as TargetedWildcard).TargetPlayer! as ServerPlayer).DrawCards(card.DrawValue(), this)
+                        ((card as TargetedWildcard).TargetPlayer! as ServerPlayer).DrawCards(card.DrawValue(), false, this)
                         break
                     case WildcardCardType.Everybody:
                         for (let player of this.Players) {
-                            player.DrawCards(card.DrawValue(), this)
+                            player.DrawCards(card.DrawValue(), false, this)
                         }
                         break
                     case WildcardCardType.Polluter:
                         for (let player of this.playersExcept(this.CurrentPlayer())) {
-                            player.DrawCards(card.DrawValue(), this)
+                            player.DrawCards(card.DrawValue(), false, this)
                         }
                         break
                     }
@@ -106,9 +110,13 @@ export class ServerGameState extends GameState {
     protected askAndAnnounceColor(playerToAsk: ServerPlayer, card: Card): Promise<Color> {
         return new Promise((resolve, reject) => {
             playerToAsk.AskColor(this).then((color) => {
+                card.Color = color
+
+                print("telling color", color)
                 for (let player of this.playersExcept(playerToAsk)) {
                     player.TellColor(color, this)
                 }
+                resolve(color)
             })
         })
     }
@@ -124,24 +132,33 @@ export class ServerGameState extends GameState {
         })
     }
 
-    public EndCombo(): void {
+    public EndCombo(): Promise<void> {
         // TODO: democracy?
-        (this.CurrentPlayer()).DrawCards(this.CurrentCombo!.DrawValue(), this)
-        super.EndCombo()
+        (this.CurrentPlayer()).DrawCards(this.CurrentCombo!.DrawValue(), true, this)
+        return new Promise((resolve) => {
+            if (this.LastCard().IsWildcard()) {
+                this.askAndAnnounceColor(this.LastPlayer as ServerPlayer, this.LastCard())
+                    .then(resolve)
+                return
+            }
+            resolve()
+        }).then(() => {
+            super.EndCombo()
+        })
     }
 
-    public BroadcastDraw(drawingPlayer: ServerPlayer, cards: Array<Card>): void {
+    public BroadcastDraw(drawingPlayer: ServerPlayer, cards: Array<Card>, endCombo: boolean): void {
         for (let player of this.Players) {
-            player.TellDraw(drawingPlayer, cards, this)
+            player.TellDraw(drawingPlayer, cards, endCombo, this)
         }
     }
 
     public PlayCards(player: TumppuPlayer, cards: CardSequence): void {
-        super.PlayCards(player, cards)
-
         for (let tellTo of this.playersExcept(player as ServerPlayer)) {
             tellTo.TellPlay(player, cards, this)
         }
+
+        super.PlayCards(player, cards)
     }
 
     protected handleCards(player: TumppuPlayer, cards: CardSequence): Promise<void> {
@@ -173,7 +190,7 @@ export class ServerGameState extends GameState {
                     {
                         for (let card of cards.Cards) {
                             toWait.push(this.askAndAnnounceTargetPlayer(player as ServerPlayer, card).then((targetPlayer) => {
-                                targetPlayer.DrawCards(card.DrawValue(), this)
+                                targetPlayer.DrawCards(card.DrawValue(), false, this)
                             }))
                         }
                     }
@@ -182,16 +199,15 @@ export class ServerGameState extends GameState {
                     {
                         const cardsToDraw = cards.DrawValue()
                         for (let drawTo of this.Players) {
-                            drawTo.DrawCards(cardsToDraw, this)
+                            drawTo.DrawCards(cardsToDraw, false, this)
                         }
                     }
-                    resolve()
                     break
                 case WildcardCardType.Polluter:
                     {
                         const cardsToDraw = cards.DrawValue()
                         for (let drawTo of this.playersExcept(player as ServerPlayer)) {
-                            drawTo.DrawCards(cardsToDraw, this)
+                            drawTo.DrawCards(cardsToDraw, false, this)
                         }
                     }
                     break
@@ -213,12 +229,8 @@ export class ServerGameState extends GameState {
                     targetPlayer.Hand = myHand
                     break
                 }
-                toWait.push((player as ServerPlayer).AskColor(this).then(color => {
-                    for (let card of cards.Cards) {
-                        card.Color = color
-                    }
-                }))
-                Promise.all(toWait).then(() => {
+                toWait.push(this.askAndAnnounceColor(player as ServerPlayer, cards.Cards[cards.Cards.size() - 1]))
+                Promise.all<void | Color>(toWait).then(() => {
                     super.handleCards(player, cards)
                     resolve()
                 }, reject)
@@ -231,9 +243,9 @@ export class ServerGameState extends GameState {
     }
 
     // Returns whether the player can play
-    public DrawCardsForPlayer(player: ServerPlayer): boolean {
+    public async DrawCardsForPlayer(player: ServerPlayer, endCombo: boolean): Promise<boolean> {
         if (this.IsComboMode()) {
-            this.EndCombo()
+            await this.EndCombo()
             return false
         }
 
@@ -244,7 +256,7 @@ export class ServerGameState extends GameState {
             player.Hand!.AddCards([newCard])
         }
 
-        player.TellDraw(player, drawnCards, this)
+        this.BroadcastDraw(player, drawnCards, endCombo)
         return true
     }
 
@@ -252,29 +264,30 @@ export class ServerGameState extends GameState {
         const currentPlayer = this.CurrentPlayer()
         const canDraw = this.CanDraw(currentPlayer)
         const mustDraw = this.MustDraw(currentPlayer)
-        let skip = false
 
-        let toWait = []
-        if (canDraw && !mustDraw) {
-            toWait.push(currentPlayer.AskDraw(this).then((wantsToDraw) => {
-                skip = !this.DrawCardsForPlayer(currentPlayer)
-            }))
-        } else if (mustDraw) {
-            skip = !this.DrawCardsForPlayer(currentPlayer)
+        if (mustDraw) {
+            this.DrawCardsForPlayer(currentPlayer, false).then(() => {
+                this.AskPlay()
+            })
+            return
         }
 
-        if (skip) {
-            return this.AskPlay()
-        }
-        Promise.all(toWait).then(() => {
-            this.CurrentPlayer().AskPlay(this).then((cards) => {
-                this.PlayCards(currentPlayer, cards)
+        currentPlayer.AskPlay(this, canDraw).then((cards) => {
+            if (typeIs(cards, "boolean")) {
+                if (canDraw) {
+                    this.DrawCardsForPlayer(currentPlayer, false).then(() => {
+                        this.AskPlay()
+                    })
+                    return
+                } 
+                error("didn't ask you to draw!")
+            }
 
-                this.IsStartingCard = false
+            this.PlayCards(currentPlayer, cards as CardSequence)
 
-                this.handleCards(currentPlayer, cards).then(() => {
-                    this.AskPlay()
-                })
+            this.IsStartingCard = false
+            this.handleCards(currentPlayer, cards as CardSequence).then(() => {
+                this.AskPlay()
             })
         })
     }

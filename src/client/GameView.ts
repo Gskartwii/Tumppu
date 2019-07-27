@@ -1,15 +1,19 @@
 import { LocalGameState } from "./GameState";
 import { RenderCardSet, CardAspectRatio } from "./Hand";
-import { Card, CardSequence } from "shared/Card";
-import { RenderCard } from "./Card";
+import { Card, CardSequence, Color } from "shared/Card";
+import { RenderCard, CardColors } from "./Card";
 import { TumppuPlayer, RealPlayer } from "shared/Player";
+import Tween from "@rbxts/tween";
+import { InCubic } from "@rbxts/easing-functions";
+
+const UpdateColorDuration = 1/4
+const UpdateColorEasing = InCubic
 
 interface IOpponentData {
     BotName: string
     Position: UDim2
     AnchorPoint: Vector2
 }
-
 
 const LeftOpponent = {BotName: "<Korppu>", Position: new UDim2(0, 0, .5, 0), AnchorPoint: new Vector2(0, .5)}
 const TopLeftOpponent = {BotName: "<Joonatan>", Position: new UDim2(0, 0, 0, 0), AnchorPoint: new Vector2(0, 0)}
@@ -63,6 +67,33 @@ const OpponentDrawSequenceDelay = OpponentPlaySequenceDelay
 const PostPlayDelay = 1/8
 const MovingCardZIndex = 5
 
+const DrawButtonActivateTweenInfo = new TweenInfo(
+    1/8,
+    Enum.EasingStyle.Quart,
+    Enum.EasingDirection.In,
+)
+const DrawButtonDeactivateTweenInfo = new TweenInfo(
+    1/8,
+    Enum.EasingStyle.Quart,
+    Enum.EasingDirection.Out,
+)
+const DrawButtonGrayoutTransparencyMin = .5
+const DrawButtonGrayoutTransparencyMax = 1
+
+const ColorDialogPreDisplayPosition = new UDim2(-.5, 0, .5, 0)
+const ColorDialogDisplayPosition = new UDim2(.5, 0, .5, 0)
+const ColorDialogPostDisplayPosition = new UDim2(1.5, 0, .5, 0)
+const ColorDialogShowTweenInfo = new TweenInfo(
+    1/4,
+    Enum.EasingStyle.Quart,
+    Enum.EasingDirection.Out,
+)
+const ColorDialogHideTweenInfo = new TweenInfo(
+    1/4,
+    Enum.EasingStyle.Quart,
+    Enum.EasingDirection.In,
+)
+
 const TweenService = game.GetService("TweenService")
 const UserInputService = game.GetService("UserInputService")
 const Players = game.GetService("Players")
@@ -77,6 +108,12 @@ class AnimationQueue {
         }
         this.queuePromise = this.queuePromise.then(animation)
     }
+}
+
+interface HSV {
+    Hue: number
+    Saturation: number
+    Value: number
 }
 
 class RenderDecks {
@@ -97,6 +134,18 @@ class RenderDecks {
         render.Parent = this.deckContainer
         this.currentPlayedCard = render
     }
+
+    public AnimateUpdateColor(color: Color): Promise<void> {
+        const oldColor = this.currentPlayedCard.BackgroundColor3
+        const newColor = CardColors.get(color)!
+
+        return new Promise((resolve) => {
+            Promise.spawn(() => {
+                Tween(UpdateColorDuration, UpdateColorEasing, (x) => this.currentPlayedCard.BackgroundColor3 = x, oldColor, newColor).Wait()
+                resolve()
+            })
+        })
+    }
 }
 
 class SequencePlayHandler {
@@ -105,7 +154,9 @@ class SequencePlayHandler {
     private handConnections: Array<RBXScriptConnection> = []
     private queueConnections: Map<TextButton, RBXScriptConnection> = new Map()
     private playAllConnection?: RBXScriptConnection
-    private pendingResolve?: (cards: CardSequence) => void
+    private drawConnection?: RBXScriptConnection
+    private pendingResolve?: (cards: [CardSequence, Map<Card, TextButton>] | boolean) => void
+    private drawButton: GuiButton
 
     private handRender: RenderCardSet
     private queueRender: RenderCardSet
@@ -114,13 +165,14 @@ class SequencePlayHandler {
 
     AnimationQueue: AnimationQueue
 
-    constructor(state: LocalGameState, queue: AnimationQueue, handRender: RenderCardSet, queueRender: RenderCardSet, backFrame: GuiBase2d, playTarget: Frame) {
+    constructor(state: LocalGameState, queue: AnimationQueue, handRender: RenderCardSet, queueRender: RenderCardSet, backFrame: GuiBase2d, playTarget: Frame, drawButton: GuiButton) {
         this.GameState = state
         this.handRender = handRender
         this.queueRender = queueRender
         this.backFrame = backFrame
         this.playTarget = playTarget
         this.AnimationQueue = queue
+        this.drawButton = drawButton
     }
 
     private transformAbsolutePosition(pos: Vector2): Vector2 {
@@ -230,7 +282,6 @@ class SequencePlayHandler {
                     wait(PostPlayDelay)
 
                     resolve()
-                    render.Destroy()
                 })
             })
         })
@@ -273,13 +324,14 @@ class SequencePlayHandler {
                 return
             }
 
+            let pendingResolve = this.pendingResolve
             this.AnimationQueue.QueueAnimation(async () => {
                 await this.animateHandToDeck(card, render)
+                if (pendingResolve !== undefined) {
+                    pendingResolve([new CardSequence([card]), new Map([[card, render]])])
+                }
             })
 
-            if (this.pendingResolve !== undefined) {
-                this.pendingResolve(new CardSequence([card]))
-            }
             this.cleanup()
         })
         this.handConnections.push(thisQuickPlayConnection)
@@ -313,46 +365,86 @@ class SequencePlayHandler {
         this.queueConnections.set(render, thisConnection)
     }
 
-    private animatePlayQueue(): void {
+    private animatePlayQueue(): Promise<Map<Card, TextButton>> {
         // this.PlayQueue.Cards may get overridden; save it in a closure
         let oldCards = this.PlayQueue.Cards
-        this.AnimationQueue.QueueAnimation(() => {
-            const cards = oldCards.reduce((map, card) => {
-                map.set(card, this.queueRender.CardRenders.get(card)!)
-                return map
-            }, new Map<Card, TextButton>())
-            const oldPositions = cards.entries().reduce((map, [card, render]) => {
-                map.set(render, this.transformAbsolutePosition(render.AbsolutePosition))
-                return map
-            }, new Map<TextButton, Vector2>())
+        return new Promise((resolveRenders) => {
+            this.AnimationQueue.QueueAnimation(() => {
+                const cards = oldCards.reduce((map, card) => {
+                    map.set(card, this.queueRender.CardRenders.get(card)!)
+                    return map
+                }, new Map<Card, TextButton>())
+                const oldPositions = cards.entries().reduce((map, [card, render]) => {
+                    map.set(render, this.transformAbsolutePosition(render.AbsolutePosition))
+                    return map
+                }, new Map<TextButton, Vector2>())
 
-            let target = this.playTarget.FindFirstChild<Frame>("PlayedCard")!
-            const newPosition = this.transformAbsolutePosition(target.AbsolutePosition)
-            const newPositions = cards.entries().reduce((map, [card, render]) => {
-                map.set(render, newPosition)
-                return map
-            }, new Map<TextButton, Vector2>())
-            const oldSizes = cards.entries().reduce((map, [card, render]) => {
-                map.set(render, render.AbsoluteSize)
-                return map
-            }, new Map<TextButton, Vector2>())
-            const newSize = target.AbsoluteSize
+                let target = this.playTarget.FindFirstChild<Frame>("PlayedCard")!
+                const newPosition = this.transformAbsolutePosition(target.AbsolutePosition)
+                const newPositions = cards.entries().reduce((map, [card, render]) => {
+                    map.set(render, newPosition)
+                    return map
+                }, new Map<TextButton, Vector2>())
+                const oldSizes = cards.entries().reduce((map, [card, render]) => {
+                    map.set(render, render.AbsoluteSize)
+                    return map
+                }, new Map<TextButton, Vector2>())
+                const newSize = target.AbsoluteSize
 
-            this.queueRender.Hand = []
-            this.queueRender.DisownCards(oldCards)
+                this.queueRender.Hand = []
+                this.queueRender.DisownCards(oldCards)
 
-            let tweensResolved = this.tweenWithBackFrame(cards.entries(), oldPositions, newPositions, oldSizes, newSize)
+                let tweensResolved = this.tweenWithBackFrame(cards.entries(), oldPositions, newPositions, oldSizes, newSize)
 
-            return new Promise((resolve, reject) => {
-                Promise.all(tweensResolved).then(() => {
-                    Promise.spawn(() => {
-                        wait(PostPlayDelay)
+                return new Promise((resolve, reject) => {
+                    Promise.all(tweensResolved).then(() => {
+                        Promise.spawn(() => {
+                            wait(PostPlayDelay)
 
-                        resolve()
-                        for (let [card, render] of cards) {
-                            render.Destroy()
-                        }
+                            resolve()
+                            resolveRenders(cards)
+                        })
                     })
+                })
+            })
+        })
+    }
+
+    private animateActivateDrawButton() {
+        this.AnimationQueue.QueueAnimation(() => {
+            return new Promise((resolve) => {
+                let tween = TweenService.Create(
+                    this.drawButton.FindFirstChild<Frame>("GrayoutFrame")!,
+                    DrawButtonActivateTweenInfo,
+                    {
+                        BackgroundTransparency: DrawButtonGrayoutTransparencyMax,
+                    }
+                )
+                tween.Play()
+
+                Promise.spawn(() => {
+                    tween.Completed.Wait()
+                    resolve()
+                })
+            })
+        })
+    }
+
+    private animateDeactivateDrawButton() {
+        this.AnimationQueue.QueueAnimation(() => {
+            return new Promise((resolve) => {
+                let tween = TweenService.Create(
+                    this.drawButton.FindFirstChild<Frame>("GrayoutFrame")!,
+                    DrawButtonDeactivateTweenInfo,
+                    {
+                        BackgroundTransparency: DrawButtonGrayoutTransparencyMin,
+                    }
+                )
+                tween.Play()
+
+                Promise.spawn(() => {
+                    tween.Completed.Wait()
+                    resolve()
                 })
             })
         })
@@ -362,6 +454,10 @@ class SequencePlayHandler {
         this.pendingResolve = undefined
         if (this.playAllConnection !== undefined) {
             this.playAllConnection.Disconnect()
+        }
+        if (this.drawConnection !== undefined) {
+            this.drawConnection.Disconnect()
+            this.animateDeactivateDrawButton()
         }
         for (let [_, conn] of this.queueConnections) {
             conn.Disconnect()
@@ -375,7 +471,7 @@ class SequencePlayHandler {
         this.PlayQueue.Cards = []
     }
 
-    public AskPlay(): Promise<CardSequence> {
+    public AskPlay(canDraw: boolean): Promise<[CardSequence, Map<Card, TextButton>] | boolean> {
         return new Promise((resolve, reject) => {
             for (let [card, render] of this.handRender.CardRenders) {
                 this.bindHandCard(card, render)
@@ -390,13 +486,23 @@ class SequencePlayHandler {
                             return
                         }
 
-                        this.animatePlayQueue()
-                        // must make a copy here
+
                         let seq = new CardSequence(this.PlayQueue.Cards)
+                        this.animatePlayQueue().then((renders) => {
+                            resolve([seq, renders])
+                        })
+                        // must make a copy here
                         this.cleanup()
-                        resolve(seq)
                 }
             })
+
+            if (canDraw) {
+                this.animateActivateDrawButton()
+                this.drawConnection = this.drawButton.Activated.Connect(() => {
+                    this.cleanup()
+                    resolve(true)
+                })
+            }
         })
     }
 
@@ -672,6 +778,100 @@ class OpponentRender {
     }
 }
 
+class ColorDialog {
+    AnimationQueue: AnimationQueue
+    private dialog: Frame
+    private redButton: GuiButton
+    private blueButton: GuiButton
+    private yellowButton: GuiButton
+    private greenButton: GuiButton
+
+    private pendingResolve?: (color: Color) => void
+    private connections: Map<GuiButton, RBXScriptConnection> = new Map()
+
+    constructor(animationQueue: AnimationQueue, dialog: Frame) {
+        this.AnimationQueue = animationQueue
+        this.dialog = dialog
+        dialog.Position = ColorDialogPreDisplayPosition
+
+        const buttonContainer = dialog.FindFirstChild("ColorFrame")!
+        this.redButton = buttonContainer.FindFirstChild<GuiButton>("Red")!
+        this.blueButton = buttonContainer.FindFirstChild<GuiButton>("Blue")!
+        this.yellowButton = buttonContainer.FindFirstChild<GuiButton>("Yellow")!
+        this.greenButton = buttonContainer.FindFirstChild<GuiButton>("Green")!
+    }
+    
+    private animateShowDialog(): void {
+        this.AnimationQueue.QueueAnimation(() => {
+            return new Promise((resolve) => {
+                const tween = TweenService.Create(
+                    this.dialog,
+                    ColorDialogShowTweenInfo,
+                    {
+                        Position: ColorDialogDisplayPosition,
+                    }
+                )
+
+                tween.Play()
+
+                Promise.spawn(() => {
+                    tween.Completed.Wait()
+                    resolve()
+                })
+            })
+        })
+    }
+
+    private animateHideDialog(): void {
+        this.AnimationQueue.QueueAnimation(() => {
+            return new Promise((resolve) => {
+                const tween = TweenService.Create(
+                    this.dialog,
+                    ColorDialogHideTweenInfo,
+                    {
+                        Position: ColorDialogPostDisplayPosition,
+                    }
+                )
+
+                tween.Play()
+
+                Promise.spawn(() => {
+                    tween.Completed.Wait()
+                    this.dialog.Position = ColorDialogPreDisplayPosition
+                    resolve()
+                })
+            })
+        })
+    }
+
+    private connectColor(button: GuiButton, color: Color): RBXScriptConnection {
+        let connection = button.MouseButton1Click.Connect(() => {
+            for (let [connectedBtn, connection] of this.connections) {
+                connection.Disconnect()
+            }
+            if (this.pendingResolve !== undefined) {
+                this.pendingResolve(color)
+            }
+            this.animateHideDialog()
+        })
+
+        this.connections.set(button, connection)
+        return connection
+    }
+    
+    public AskColor(): Promise<Color> {
+        return new Promise((resolve) => {
+            this.pendingResolve = resolve
+            this.animateShowDialog()
+
+            this.connectColor(this.redButton, Color.Red)
+            this.connectColor(this.blueButton, Color.Blue)
+            this.connectColor(this.yellowButton, Color.Yellow)
+            this.connectColor(this.greenButton, Color.Green)
+        })
+    }
+}
+
 export class GameView {
     GameState: LocalGameState
     private animationQueue: AnimationQueue
@@ -679,6 +879,7 @@ export class GameView {
     private queueRender: RenderCardSet
     private deckRender: RenderDecks
     private playHandler: SequencePlayHandler
+    private colorHandler: ColorDialog
     private opponentRenders: Map<TumppuPlayer, OpponentRender>
 
     constructor(options: {
@@ -687,6 +888,8 @@ export class GameView {
         handFrame: Frame,
         queueFrame: Frame,
         deckContainer: Frame,
+        drawButton: GuiButton,
+        colorDialog: Frame,
         mouse: Mouse}) {
         this.GameState = options.state
 
@@ -695,7 +898,8 @@ export class GameView {
         this.queueRender = new RenderCardSet([], options.queueFrame, options.mouse)
         this.queueRender.UseStandardOrder = false
         this.deckRender = new RenderDecks(options.deckContainer)
-        this.playHandler = new SequencePlayHandler(options.state, this.animationQueue, this.handRender, this.queueRender, options.baseFrame, options.deckContainer)
+        this.playHandler = new SequencePlayHandler(options.state, this.animationQueue, this.handRender, this.queueRender, options.baseFrame, options.deckContainer, options.drawButton)
+        this.colorHandler = new ColorDialog(this.animationQueue, options.colorDialog)
         this.opponentRenders = new Map(this.GameState.Players
             .filter((player) => player !== this.GameState.LocalPlayer())
             .map((player) => [player, new OpponentRender(
@@ -710,16 +914,37 @@ export class GameView {
         }
     }
 
-    public AskPlay(): Promise<CardSequence> {
+    public AskPlay(canDraw: boolean): Promise<CardSequence | boolean> {
         return new Promise((resolve) => {
             this.animationQueue.QueueAnimation(async () => {
                 // if a draw animation is in progress, we must wait for it to end
-                this.playHandler.AskPlay().then((seq) => {
-                    resolve(seq)
+                this.playHandler.AskPlay(canDraw).then((resolution) => {
+                    if (typeIs(resolution, "boolean")) {
+                        resolve(resolution)
+                        return
+                    }
+
+                    const [seq, renders] = resolution
                     this.animationQueue.QueueAnimation(async () => {
                         this.deckRender.RenderPlayedCard(seq.Cards[seq.Cards.size() - 1])
+                        for (let [card, render] of renders) {
+                            render.Destroy()
+                        }
                     })
+
+                    resolve(seq)
                 })
+            })
+        })
+    }
+
+    public AskColor(): Promise<Color> {
+        return new Promise((resolve) => {
+            this.colorHandler.AskColor().then((color) => {
+                this.animationQueue.QueueAnimation(async () => {
+                    await this.deckRender.AnimateUpdateColor(color)
+                })
+                resolve(color)
             })
         })
     }
@@ -756,6 +981,12 @@ export class GameView {
                     })
                 })
             })
+        })
+    }
+
+    public OpponentChoseColor(color: Color): void {
+        this.animationQueue.QueueAnimation(async () => {
+            await this.deckRender.AnimateUpdateColor(color)
         })
     }
 }

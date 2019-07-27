@@ -51,6 +51,8 @@ export function DeserializeState(serializedState: ISerializedGameState): LocalGa
         state.IsStartingCard = false
     }
 
+    state.LastPlayer = state.DeserializePlayer(serializedState.LastPlayer)
+
     return state
 }
 

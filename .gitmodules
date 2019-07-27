@@ -1,0 +1,3 @@
+[submodule "src/shared/vendor/Interpolation"]
+	path = src/shared/vendor/Interpolation
+	url = https://github.com/RoStrap/Interpolation

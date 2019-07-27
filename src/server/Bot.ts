@@ -23,7 +23,6 @@ export class BotPlayer extends AbstractPlayer implements ServerPlayer {
     // use promise for compatibility
     // AskPlay should never be called if Hand.ShouldDraw() returns true
     public AskPlay(state: GameState): Promise<CardSequence> {
-        print("asking bot to play")
         return new Promise((resolve, reject) => {
             if (state.MustDraw(this)) {
                 reject("hand should draw yet bot asked to play")
@@ -61,21 +60,8 @@ export class BotPlayer extends AbstractPlayer implements ServerPlayer {
                 let chosen = sequences.reduce((prev, curr) => prev.size() < curr.size() ? prev : curr)
                 let chosenCard = chosen[0]
 
-                if (chosenCard.IsWildcard()) {
-                    let wildArray = (chosen as Array<TargetedWildcard>)
-                    switch (chosenCard.CardType) {
-                    case WildcardCardType.Dictator:
-                    case WildcardCardType.Exchange:
-                    // spying results are discarded for now
-                    case WildcardCardType.Spy:
-                        let playerWithLeastCards = this.getBestPlayer(state);
-                        wildArray.forEach((card) => card.TargetPlayer = playerWithLeastCards)
-                    }
-
-                    // find color with most cards
-                    let bestColor = this.getBestColor()
-                    wildArray.forEach((card) => card.Color = bestColor)
-                }
+                // don't set color or target yet, the logic on when
+                // it is needed should be delegated to GameState
 
                 let outSequence = new CardSequence(chosen)
                 resolve(outSequence)
@@ -83,7 +69,7 @@ export class BotPlayer extends AbstractPlayer implements ServerPlayer {
             }
             // combo mode
             // TODO: smarter combo AI
-            let comboCards = this.Hand.Cards.filter((card) => card.IsComboCard())
+            let comboCards = this.Hand.Cards.filter((card) => card.CanPlay(state.LastCard(), true))
             // play cards one at a time
             let outSequence = new CardSequence([comboCards[0]])
             resolve(outSequence)
@@ -102,6 +88,10 @@ export class BotPlayer extends AbstractPlayer implements ServerPlayer {
         return new Promise((resolve, reject) => resolve(true))
     }
 
+    public async AskReady(): Promise<void> {
+        //always ready
+    }
+
     public TellPlay(player: TumppuPlayer, cards: CardSequence, state: GameState): void {
         // aggressive jump-in
         /*let cardsToJumpIn = this.Hand.Cards.filter((card) => card.CanJumpIn(state.LastCard()))
@@ -116,7 +106,7 @@ export class BotPlayer extends AbstractPlayer implements ServerPlayer {
         }*/
     } 
 
-    public TellDraw(player: TumppuPlayer, cards: Array<Card>, state: GameState): void {
+    public TellDraw(player: TumppuPlayer, cards: Array<Card>, endCombo: boolean, state: GameState): void {
         // nop
     }
 
@@ -136,10 +126,10 @@ export class BotPlayer extends AbstractPlayer implements ServerPlayer {
         // nop
     }
 
-    public DrawCards(n: number, state: ServerGameState): Array<Card> {
+    public DrawCards(n: number, endCombo: boolean, state: ServerGameState): Array<Card> {
         let cards = state.DrawCards(n)
         this.Hand.AddCards(cards)
-        state.BroadcastDraw(this, cards)
+        state.BroadcastDraw(this, cards, endCombo)
         
         return cards
     }

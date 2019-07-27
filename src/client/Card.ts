@@ -1,12 +1,12 @@
-import { Card, Color, NormalCard, NormalCardType, WildcardCardType, Wildcard } from "shared/Card";
+import { Card, Color, NormalCardType, WildcardCardType } from "shared/Card";
 
-const CardColors = new Map<Color, Color3>([
+export const CardColors = new Map<Color, Color3>([
     [Color.Red, Color3.fromRGB(0xf4, 0x43, 0x36)], // Red500
     [Color.Green, Color3.fromRGB(0x4C, 0xAF, 0x50)], // Green500
     [Color.Blue, Color3.fromRGB(0x3F, 0x51, 0xB5)], // Indigo500
     [Color.Yellow, Color3.fromRGB(0xFF, 0xC1, 0x07)], // Amber500
 ])
-const DefaultCardColor = Color3.fromRGB(0x42, 0x42, 0x42) // Grey800
+export const DefaultCardColor = Color3.fromRGB(0x42, 0x42, 0x42) // Grey800
 
 const CardPadding = new UDim(0, 16)
 
@@ -81,6 +81,7 @@ const BackText = "TUMPPU"
 const BackTextRotation = 70
 const BackTextColor = new Color3(1, 1, 1)
 const BackColor = Color3.fromRGB(0x42, 0x42, 0x42) // Grey800
+const BackTextFont = Enum.Font.GothamBlack
 
 Promise.spawn(() => game.GetService("ContentProvider").PreloadAsync(
     SpriteSheets.entries()
@@ -225,6 +226,7 @@ export class RenderCard {
         text.AnchorPoint = new Vector2(.5, .5)
         text.Position = new UDim2(.5, 0, .5, 0)
         text.Size = new UDim2(1, 0, 1, 0)
+        text.Font = BackTextFont
         text.Text = BackText
         text.TextColor3 = BackTextColor
         text.Rotation = BackTextRotation
