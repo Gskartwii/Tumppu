@@ -6,7 +6,7 @@ import { RealPlayer, TumppuPlayer } from "shared/Player";
 
 const askPlay = new Net.ServerEvent("AskPlay")
 const askColor = new Net.ServerEvent("AskColor")
-const askVote = new Net.ServerFunction("AskVote")
+const askVote = new Net.ServerEvent("AskVote")
 const askReady = new Net.ServerEvent("AskReady")
 
 const tellState = new Net.ServerEvent("TellState")
@@ -59,13 +59,16 @@ export class ServerRealPlayer extends RealPlayer implements ServerPlayer {
 
     public AskVote(state: GameState): Promise<TumppuPlayer> {
         return new Promise((resolve, reject) => {
-            askVote.CallPlayerAsync(this.Player).then((returns: any) => {
-                let votedPlayer = state.DeserializePlayer(returns as number)
+            let result = connectOnce<[number]>(askVote, this).then((returns) => {
+                const index = returns[0]
+                const votedPlayer = state.DeserializePlayer(index)
                 if (votedPlayer === this) {
                     error("Can't vote for self")
                 }
                 resolve(votedPlayer)
-            }, reject)
+            })
+
+            askVote.SendToPlayer(this.Player)
         })
     }
 
@@ -95,7 +98,11 @@ export class ServerRealPlayer extends RealPlayer implements ServerPlayer {
     }
 
     public TellVoteCompleted(votes: Map<TumppuPlayer, TumppuPlayer>, state: GameState): void {
-        tellVoteCompleted.SendToAllPlayers(this.Player, votes.entries().map((entry) => [state.SerializePlayer(entry[0]), state.SerializePlayer(entry[1])]))
+        tellVoteCompleted.SendToPlayer(this.Player, votes
+            .entries()
+            .map((entry) => [
+                state.SerializePlayer(entry[0]),
+                state.SerializePlayer(entry[1])]))
     }
 
     public TellHand(player: TumppuPlayer, state: GameState): void {

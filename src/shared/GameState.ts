@@ -62,7 +62,7 @@ export class GameState {
             allCards.push(new TargetedWildcard(Card.WildcardCardType.Spy))
         }*/
         //allCards.push(new TargetedWildcard(Card.WildcardCardType.Democracy))
-        //allCards.push(new TargetedWildcard(Card.WildcardCardType.Dictator))
+        allCards.push(new TargetedWildcard(Card.WildcardCardType.Dictator))
         allCards.push(new TargetedWildcard(Card.WildcardCardType.Everybody))
         //allCards.push(new TargetedWildcard(Card.WildcardCardType.Exchange))
         allCards.push(new TargetedWildcard(Card.WildcardCardType.Polluter))

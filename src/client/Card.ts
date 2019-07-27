@@ -16,7 +16,7 @@ const SpriteSheets = new Map<string, string>([
     ["MaterialAction2", "rbxassetid://242376304"],
     ["TumppuExtra", "rbxassetid://3510513770"],
 ])
-const NormalCardIcons = new Map<NormalCardType, {spriteSheet: string, position: Vector2, size: Vector2}>([
+export const NormalCardIcons = new Map<NormalCardType, {spriteSheet: string, position: Vector2, size: Vector2}>([
     [NormalCardType.Reverse, {
         spriteSheet: SpriteSheets.get("MaterialNotification")!,
         position: new Vector2(96, 384),
@@ -28,7 +28,7 @@ const NormalCardIcons = new Map<NormalCardType, {spriteSheet: string, position: 
         size: new Vector2(96, 96),
     }] // content/block
 ])
-const WildcardIcons = new Map<WildcardCardType, {spriteSheet: string, position: Vector2, size: Vector2}>([
+export const WildcardIcons = new Map<WildcardCardType, {spriteSheet: string, position: Vector2, size: Vector2}>([
     [WildcardCardType.Democracy, {
         spriteSheet: SpriteSheets.get("TumppuExtra")!,
         position: new Vector2(0, 0),

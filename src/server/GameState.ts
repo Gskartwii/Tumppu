@@ -40,14 +40,13 @@ export class ServerGameState extends GameState {
             player.TellState(this)
             toWait.push(player.AskReady())
         }
+        for (let player of players) {
+            player.DrawCards(7, false, this)
+        }
 
         // this may cause Draw() to occur, so we call it after announcing the state
         Promise.all(toWait).then(() => {
             this.handleStartingCard(startingCard).then(() => {
-                for (let player of players) {
-                    player.DrawCards(7, false, this)
-                }
-                
                 // don't implement jump-in rules yet
                 this.AskPlay()
             })
@@ -124,6 +123,8 @@ export class ServerGameState extends GameState {
     protected askAndAnnounceTargetPlayer(playerToAsk: ServerPlayer, card: Card): Promise<ServerPlayer> {
         return new Promise((resolve, reject) => {
             playerToAsk.AskVote(this).then((targetPlayer) => {
+                (card as TargetedWildcard).TargetPlayer = targetPlayer
+
                 for (let player of this.playersExcept(playerToAsk)) {
                     player.TellVoteCompleted(new Map().set(playerToAsk, targetPlayer), this)
                 }

@@ -2,13 +2,16 @@ import { LocalGameState } from "./GameState";
 import { ClientEvent } from "@rbxts/net";
 import { ISerializedCard, CardSequence, Color } from "shared/Card";
 import { GameView } from "./GameView";
+import { TargetedWildcard } from "shared/Player";
 
 const tellDraw = new ClientEvent("TellDraw")
 const tellPlay = new ClientEvent("TellPlay")
 const tellColor = new ClientEvent("TellColor")
+const tellVoteCompleted = new ClientEvent("TellVoteCompleted")
 const askReady = new ClientEvent("AskReady")
 const askPlay = new ClientEvent("AskPlay")
 const askColor = new ClientEvent("AskColor")
+const askVote = new ClientEvent("AskVote")
 
 export class NetworkManager {
     GameState: LocalGameState
@@ -82,6 +85,24 @@ export class NetworkManager {
             print("tellcolor", color)
             this.GameState.LastCard().Color = color
             this.gameView.OpponentChoseColor(color)
+        })
+
+        askVote.Connect(async () => {
+            print("asked player")
+            let player = await this.gameView.AskPlayer(this.GameState.LastCard())
+
+            askVote.SendToServer(this.GameState.SerializePlayer(player))
+        })
+
+        tellVoteCompleted.Connect((results: Array<[number, number]>) => {
+            const resultMap = new Map(results
+                .map(([voter, target]) => [
+                    this.GameState.DeserializePlayer(voter),
+                    this.GameState.DeserializePlayer(target),
+                ]));
+
+            // FIXME: assume only one vote
+            (state.LastCard() as TargetedWildcard).TargetPlayer = resultMap.values()[0]
         })
 
         askReady.Connect(() => {
