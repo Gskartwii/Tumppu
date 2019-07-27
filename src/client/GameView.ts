@@ -9,6 +9,11 @@ import { InCubic } from "@rbxts/easing-functions";
 const UpdateColorDuration = 1/4
 const UpdateColorEasing = InCubic
 
+const PlayedCardPosition = new UDim2(1, 0, 0, 0)
+const PlayedCardAnchorPoint = new Vector2(1, 0)
+const PlayedCardSize = new UDim2(1, 0, 1, 0)
+const PlayedCardAspectRatio = 2.5/3.5
+
 interface IOpponentData {
     BotName: string
     Position: UDim2
@@ -110,12 +115,6 @@ class AnimationQueue {
     }
 }
 
-interface HSV {
-    Hue: number
-    Saturation: number
-    Value: number
-}
-
 class RenderDecks {
     private deckContainer: Frame
     private currentDrawDeck: Frame
@@ -131,6 +130,13 @@ class RenderDecks {
         this.currentPlayedCard.Destroy()
         let render = new RenderCard(card).FrontAsFrame()
         render.Name = "PlayedCard"
+        render.Position = PlayedCardPosition
+        render.AnchorPoint = PlayedCardAnchorPoint
+        render.Size = PlayedCardSize
+
+        const arConstraint = new Instance("UIAspectRatioConstraint", render)
+        arConstraint.AspectRatio = PlayedCardAspectRatio
+
         render.Parent = this.deckContainer
         this.currentPlayedCard = render
     }
@@ -279,11 +285,7 @@ class SequencePlayHandler {
             let tweensResolved = this.tweenWithBackFrame(cards.entries(), oldPositions, newPositions, oldSizes, newSize)
 
             Promise.all(tweensResolved).then(() => {
-                Promise.spawn(() => {
-                    wait(PostPlayDelay)
-
-                    resolve()
-                })
+                resolve()
             })
         })
     }
@@ -326,11 +328,18 @@ class SequencePlayHandler {
             }
 
             let pendingResolve = this.pendingResolve
-            this.AnimationQueue.QueueAnimation(async () => {
-                await this.animateHandToDeck(card, render)
-                if (pendingResolve !== undefined) {
-                    pendingResolve([new CardSequence([card]), new Map([[card, render]])])
-                }
+            this.AnimationQueue.QueueAnimation(() => {
+                return new Promise((resolve) => {
+                    this.animateHandToDeck(card, render).then(() => {
+                        if (pendingResolve !== undefined) {
+                            pendingResolve([new CardSequence([card]), new Map([[card, render]])])
+                        }
+                        Promise.spawn(() => {
+                            wait(PostPlayDelay)
+                            resolve()
+                        })
+                    })
+                })
             })
 
             this.cleanup()
@@ -398,11 +407,7 @@ class SequencePlayHandler {
 
             let tweensResolved = this.tweenWithBackFrame(cards.entries(), oldPositions, newPositions, oldSizes, newSize)
             Promise.all(tweensResolved).then(() => {
-                Promise.spawn(() => {
-                    wait(PostPlayDelay)
-
-                    resolve(cards)
-                })
+                resolve(cards)
             })
         })
     }
@@ -486,9 +491,12 @@ class SequencePlayHandler {
                             return new Promise((resolveAnimation) => {
                                 this.animatePlayQueue().then((renders) => {
                                     this.PlayQueue.Cards = []
-
-                                    resolveAnimation()
                                     resolve([seq, renders])
+
+                                    Promise.spawn(() => {
+                                        wait(PostPlayDelay)
+                                        resolveAnimation()
+                                    })
                                 })
                             })
                         })
@@ -882,6 +890,7 @@ export class GameView {
     private playHandler: SequencePlayHandler
     private colorHandler: ColorDialog
     private opponentRenders: Map<TumppuPlayer, OpponentRender>
+    private drawButtonLabel: TextLabel
 
     constructor(options: {
         state: LocalGameState,
@@ -909,6 +918,9 @@ export class GameView {
                 player,
                 options.baseFrame,
                 options.deckContainer)]))
+        this.drawButtonLabel = options.drawButton
+            .FindFirstChild("LabelContainer")!
+            .FindFirstChild<TextLabel>("PaddedLabel")!
 
         for (let [player, render] of this.opponentRenders) {
             render.Render()
@@ -958,20 +970,24 @@ export class GameView {
     }
 
     public DrawCards(player: TumppuPlayer, cards: Array<Card>): void {
-        this.animationQueue.QueueAnimation(() => {
+        this.animationQueue.QueueAnimation(async () => {
             if (player === this.GameState.LocalPlayer()) {
-                return this.playHandler.AnimateDrawCards(cards)
+                await this.playHandler.AnimateDrawCards(cards)
             } else {
-                return this.opponentRenders.get(player)!.AnimateDrawCards(cards)
+                await this.opponentRenders.get(player)!.AnimateDrawCards(cards)
             }
+
+            // Will always be undefined if a player has drawn
+            this.updateDrawButton(undefined)
         })
     }
 
-    public OpponentPlayedCards(player: TumppuPlayer, cards: CardSequence): void {
+    public OpponentPlayedCards(player: TumppuPlayer, cards: CardSequence, comboSeq: CardSequence | undefined): void {
         this.animationQueue.QueueAnimation(() => {
             return new Promise((resolve) => {
                 this.opponentRenders.get(player)!.AnimatePlayCards(cards).then((animatedCards) => {
                     this.deckRender.RenderPlayedCard(cards.Cards[cards.Cards.size() - 1])
+                    this.updateDrawButton(comboSeq)
                     for (let card of animatedCards) {
                         card.Destroy()
                     }
@@ -988,6 +1004,20 @@ export class GameView {
     public OpponentChoseColor(color: Color): void {
         this.animationQueue.QueueAnimation(async () => {
             await this.deckRender.AnimateUpdateColor(color)
+        })
+    }
+
+    private updateDrawButton(comboSeq: CardSequence | undefined): void {
+        if (comboSeq !== undefined) {
+            this.drawButtonLabel.Text = "+%d".format(comboSeq.DrawValue())
+        } else {
+            this.drawButtonLabel.Text = "Draw"
+        }
+    }
+
+    public QueueUpdateDrawButton(comboSeq: CardSequence | undefined): void {
+        this.animationQueue.QueueAnimation(async () => {
+            this.updateDrawButton(comboSeq)
         })
     }
 }

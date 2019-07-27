@@ -19,6 +19,8 @@ const playedCardContainer = baseFrame
     .WaitForChild("CenterContainer")
     .WaitForChild<Frame>("Cards")
 const drawButton = baseFrame
+    .WaitForChild("CenterContainer")
+    .WaitForChild("BelowDecks")
     .WaitForChild<GuiButton>("DrawButton")
 const colorDialog = baseFrame
     .WaitForChild<Frame>("ColorDialog")

@@ -1,5 +1,5 @@
 import { LocalGameState } from "./GameState";
-import { ClientEvent, CreateThrottledFunction } from "@rbxts/net";
+import { ClientEvent } from "@rbxts/net";
 import { ISerializedCard, CardSequence, Color } from "shared/Card";
 import { GameView } from "./GameView";
 
@@ -19,6 +19,7 @@ export class NetworkManager {
         this.gameView = view
 
         this.gameView.DrawTopCard(this.GameState.DiscardPile[this.GameState.DiscardPile.size() - 1])
+        this.gameView.QueueUpdateDrawButton(state.CurrentCombo)
 
         tellDraw.Connect((playerIndex: number, cards: number | Array<ISerializedCard>, endCombo: boolean) => {
             let player = state.DeserializePlayer(playerIndex)
@@ -28,11 +29,11 @@ export class NetworkManager {
 
             print("telldraw:", newCards.size(), playerIndex)
 
-            this.gameView.DrawCards(player, newCards)
-
             if (endCombo) {
                 this.GameState.EndCombo()
             }
+
+            this.gameView.DrawCards(player, newCards)
         })
 
         tellPlay.Connect((playerIndex: number, cards: Array<ISerializedCard>) => {
@@ -50,7 +51,7 @@ export class NetworkManager {
             print("told play cards", deserializedCards.map((card) => card.Name()).join(), playerIndex)
             this.GameState.PlayCards(player, seq)
 
-            this.gameView.OpponentPlayedCards(player, seq)
+            this.gameView.OpponentPlayedCards(player, seq, this.GameState.CurrentCombo)
         })
 
         askPlay.Connect(async (canDraw: boolean) => {
@@ -64,6 +65,7 @@ export class NetworkManager {
             print("playing cards", playedCards.Cards.map((card) => card.Name()).join())
             let serialized = playedCards.Cards.map((card) => player.Hand!.Cards.indexOf(card))
             this.GameState.PlayCards(player, playedCards)
+            this.gameView.QueueUpdateDrawButton(this.GameState.CurrentCombo)
 
             askPlay.SendToServer(serialized)
         })
