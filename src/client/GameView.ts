@@ -252,6 +252,7 @@ class SequencePlayHandler {
 
     private animateHandToQueue(cards: Array<[Card, TextButton]>): Promise<void> {
         this.queueRender.Hand = this.queueRender.Hand.concat(cards.map(([card, render]) => card))
+
         return this.swapCardRenders(cards, this.handRender, this.queueRender)
     }
 
@@ -368,43 +369,39 @@ class SequencePlayHandler {
     private animatePlayQueue(): Promise<Map<Card, TextButton>> {
         // this.PlayQueue.Cards may get overridden; save it in a closure
         let oldCards = this.PlayQueue.Cards
-        return new Promise((resolveRenders) => {
-            this.AnimationQueue.QueueAnimation(() => {
-                const cards = oldCards.reduce((map, card) => {
-                    map.set(card, this.queueRender.CardRenders.get(card)!)
-                    return map
-                }, new Map<Card, TextButton>())
-                const oldPositions = cards.entries().reduce((map, [card, render]) => {
-                    map.set(render, this.transformAbsolutePosition(render.AbsolutePosition))
-                    return map
-                }, new Map<TextButton, Vector2>())
 
-                let target = this.playTarget.FindFirstChild<Frame>("PlayedCard")!
-                const newPosition = this.transformAbsolutePosition(target.AbsolutePosition)
-                const newPositions = cards.entries().reduce((map, [card, render]) => {
-                    map.set(render, newPosition)
-                    return map
-                }, new Map<TextButton, Vector2>())
-                const oldSizes = cards.entries().reduce((map, [card, render]) => {
-                    map.set(render, render.AbsoluteSize)
-                    return map
-                }, new Map<TextButton, Vector2>())
-                const newSize = target.AbsoluteSize
+        return new Promise((resolve) => {
+            const cards = oldCards.reduce((map, card) => {
+                map.set(card, this.queueRender.CardRenders.get(card)!)
+                return map
+            }, new Map<Card, TextButton>())
+            const oldPositions = cards.entries().reduce((map, [card, render]) => {
+                map.set(render, this.transformAbsolutePosition(render.AbsolutePosition))
+                return map
+            }, new Map<TextButton, Vector2>())
 
-                this.queueRender.Hand = []
-                this.queueRender.DisownCards(oldCards)
+            let target = this.playTarget.FindFirstChild<Frame>("PlayedCard")!
+            const newPosition = this.transformAbsolutePosition(target.AbsolutePosition)
+            const newPositions = cards.entries().reduce((map, [card, render]) => {
+                map.set(render, newPosition)
+                return map
+            }, new Map<TextButton, Vector2>())
+            const oldSizes = cards.entries().reduce((map, [card, render]) => {
+                map.set(render, render.AbsoluteSize)
+                return map
+            }, new Map<TextButton, Vector2>())
+            const newSize = target.AbsoluteSize
 
-                let tweensResolved = this.tweenWithBackFrame(cards.entries(), oldPositions, newPositions, oldSizes, newSize)
 
-                return new Promise((resolve, reject) => {
-                    Promise.all(tweensResolved).then(() => {
-                        Promise.spawn(() => {
-                            wait(PostPlayDelay)
+            this.queueRender.Hand = []
+            this.queueRender.DisownCards(oldCards)
 
-                            resolve()
-                            resolveRenders(cards)
-                        })
-                    })
+            let tweensResolved = this.tweenWithBackFrame(cards.entries(), oldPositions, newPositions, oldSizes, newSize)
+            Promise.all(tweensResolved).then(() => {
+                Promise.spawn(() => {
+                    wait(PostPlayDelay)
+
+                    resolve(cards)
                 })
             })
         })
@@ -467,8 +464,6 @@ class SequencePlayHandler {
             conn.Disconnect()
         }
         this.handConnections = []
-
-        this.PlayQueue.Cards = []
     }
 
     public AskPlay(canDraw: boolean): Promise<[CardSequence, Map<Card, TextButton>] | boolean> {
@@ -486,10 +481,16 @@ class SequencePlayHandler {
                             return
                         }
 
+                        this.AnimationQueue.QueueAnimation(() => {
+                            let seq = new CardSequence(this.PlayQueue.Cards)
+                            return new Promise((resolveAnimation) => {
+                                this.animatePlayQueue().then((renders) => {
+                                    this.PlayQueue.Cards = []
 
-                        let seq = new CardSequence(this.PlayQueue.Cards)
-                        this.animatePlayQueue().then((renders) => {
-                            resolve([seq, renders])
+                                    resolveAnimation()
+                                    resolve([seq, renders])
+                                })
+                            })
                         })
                         // must make a copy here
                         this.cleanup()
