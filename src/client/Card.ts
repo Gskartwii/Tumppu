@@ -11,6 +11,9 @@ export const DefaultCardColor = Color3.fromRGB(0x42, 0x42, 0x42) // Grey800
 const CardPadding = new UDim(0, 16)
 
 const SpriteSheets = new Map<string, string>([
+    // TODO: reupload the material sets
+    // they're blurry
+    // maybe update them?
     ["MaterialContent", "rbxassetid://242376482"],
     ["MaterialNotification", "rbxassetid://242376827"],
     ["MaterialAction2", "rbxassetid://242376304"],

@@ -89,6 +89,8 @@ export class NetworkManager {
 
         askVote.Connect(async () => {
             print("asked player")
+            // TODO: don't close dialog if it's democracy
+            // instead show waiting animation
             let player = await this.gameView.AskPlayer(this.GameState.LastCard())
 
             askVote.SendToServer(this.GameState.SerializePlayer(player))

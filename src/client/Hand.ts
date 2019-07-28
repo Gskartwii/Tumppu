@@ -142,6 +142,7 @@ export class RenderCardSet {
             return this.getAbsolutePositionsCenterAligned()
         }
 
+        const baseCardWidth = (frameWidth) / countCards
         if (mousePositionX < frameStartX
             || mousePositionX > frameEndX
             || mousePositionY < frameStartY
@@ -150,41 +151,28 @@ export class RenderCardSet {
                 let positions = new Map<Card, Vector2>()
                 let i = 0
                 for (let [card, render] of sorted) {
-                    positions.set(card, new Vector2((i / (countCards - 1)) * (frameWidth - cardWidth * CardOffsetRatio) + frameStartX, frameStartY))
+                    positions.set(card, new Vector2(baseCardWidth * i + frameStartX, frameStartY))
                     i++
                 }
                 return positions
             }
 
-        /*
-        need a function with the following properties:
-        [0, 1] -> [0, 1]
-        growth accelerates until certain point in domain, then decelartes
-
-        Let f(x) := -(-x-m)^2 + 1;
-        i(x) := \int f(x) dx;
-        n(x) := \frac {i(x)}{i(1)};
-        where x is the normalized index of a card and
-        m is the normalized x-position of the mouse.
-        Then n gives the normalized coordinates for the
-        card's position.
-        */
-        const normalizedMouseX = (mousePositionX - frameStartX) / (frameEndX - frameStartX)
+        const normalizedMouseX = 1 - (mousePositionX - frameStartX) / (frameEndX - frameStartX)
+        const paramA = 3
 
         let positions = new Map<Card, Vector2>()
         let i = 0
         for (let [card, render] of sorted) {
             let normalizedIndex = i / (countCards - 1)
             let normalizedPosition = (
-                (-1/3)*math.pow(normalizedIndex, 3)
-                + normalizedMouseX*math.pow(normalizedIndex, 2)
-                + (1 - math.pow(normalizedMouseX, 2))*normalizedIndex) / (
-                (-1/3)
-                + normalizedMouseX
-                + (1 - math.pow(normalizedMouseX, 2)))
+                  (1/6)*paramA*math.pow(normalizedIndex, 3)
+                - (1/2)*paramA*normalizedMouseX*math.pow(normalizedIndex, 2)
+                + normalizedIndex
+                - (1/6)*paramA*normalizedIndex
+                + (1/2)*paramA*normalizedMouseX*normalizedIndex)
 
             positions.set(card, new Vector2(
-                normalizedPosition*(frameWidth - cardWidth * CardOffsetRatio) + frameStartX,
+                normalizedPosition*(frameWidth - baseCardWidth) + frameStartX,
                 frameStartY,
             ))
             i++
