@@ -81,13 +81,6 @@ export class GameState {
             drawPileCards[randomCardIndex] = drawPileCards[i];
             drawPileCards[i] = temp;
         }
-
-        drawPileCards.unshift(
-            new Card.NormalCard(Card.Color.Blue, Card.NormalCardType.Number, 5),
-            new TargetedWildcard(Card.WildcardCardType.Spy),
-            new TargetedWildcard(Card.WildcardCardType.Spy),
-            new TargetedWildcard(Card.WildcardCardType.Spy),
-        )
     }
 
     public CanDrawCards(n: number): boolean {
