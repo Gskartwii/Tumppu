@@ -58,9 +58,9 @@ export class GameState {
         for (let i = 0; i < 4; i++) {
             allCards.push(new TargetedWildcard(Card.WildcardCardType.Draw4))
         }
-        /*for (let i = 0; i < 3; i++) {
+        for (let i = 0; i < 3; i++) {
             allCards.push(new TargetedWildcard(Card.WildcardCardType.Spy))
-        }*/
+        }
         //allCards.push(new TargetedWildcard(Card.WildcardCardType.Democracy))
         allCards.push(new TargetedWildcard(Card.WildcardCardType.Dictator))
         allCards.push(new TargetedWildcard(Card.WildcardCardType.Everybody))
@@ -81,6 +81,13 @@ export class GameState {
             drawPileCards[randomCardIndex] = drawPileCards[i];
             drawPileCards[i] = temp;
         }
+
+        drawPileCards.unshift(
+            new Card.NormalCard(Card.Color.Blue, Card.NormalCardType.Number, 5),
+            new TargetedWildcard(Card.WildcardCardType.Spy),
+            new TargetedWildcard(Card.WildcardCardType.Spy),
+            new TargetedWildcard(Card.WildcardCardType.Spy),
+        )
     }
 
     public CanDrawCards(n: number): boolean {
@@ -229,11 +236,6 @@ export class GameState {
     }
 
     protected handleCardsComboMode(player: TumppuPlayer, cards: Card.CardSequence): void {
-        if (cards.Cards.every((card) => card.IsWildcard() && card.CardType === Card.WildcardCardType.Spy)) {
-            this.EndCombo()
-            return
-        }
-
         let turnCards = cards.Cards.filter((card) =>
             (!card.IsWildcard() && (
                 card.CardType === Card.NormalCardType.Reverse ||
@@ -241,7 +243,13 @@ export class GameState {
             ) || (card.IsWildcard() &&
             card.CardType === Card.WildcardCardType.Exchange)))
         if (turnCards.size() === 0) {
-            // only contains +2, +4 and/or democracy
+            // only contains spy, +2, +4 and/or democracy
+            if (cards.DrawValue() === 0) {
+                // only spy cards: bail without advancing the turn
+                // the turn doesn't end until the combo cards have been drawn,
+                // after which EndCombo() will be called
+                return
+            }
             this.AdvanceTurn()
             return
         } else if (!turnCards[0].IsWildcard() && turnCards[0].CardType === Card.NormalCardType.Reverse) {

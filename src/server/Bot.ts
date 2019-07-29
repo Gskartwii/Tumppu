@@ -1,7 +1,7 @@
 import { GameState } from 'shared/GameState'
 import { Card, NormalCard, Wildcard, WildcardCardType, Color, CardSequence } from 'shared/Card';
 import { ServerPlayer, ServerGameState } from './GameState'
-import { AbstractPlayer, TumppuPlayer, TargetedWildcard } from 'shared/Player';
+import { AbstractPlayer, TumppuPlayer } from 'shared/Player';
 
 export class BotPlayer extends AbstractPlayer implements ServerPlayer {
     private getBestColor(): Color {
@@ -80,8 +80,12 @@ export class BotPlayer extends AbstractPlayer implements ServerPlayer {
         return new Promise((resolve, reject) => resolve(this.getBestColor()))
     }
 
-    public AskVote(state: GameState): Promise<TumppuPlayer> {
-        return new Promise((resolve, reject) => resolve(this.getBestPlayer(state)))
+    public AskVote(cardType: WildcardCardType, count: number, state: GameState): Promise<Array<TumppuPlayer>> {
+        const votes: Array<TumppuPlayer> = []
+        for (let i = 0; i < count; i++) {
+            votes.push(this.getBestPlayer(state))
+        }
+        return new Promise((resolve, reject) => resolve(votes))
     }
 
     public AskDraw(state: GameState): Promise<boolean> {
@@ -122,7 +126,7 @@ export class BotPlayer extends AbstractPlayer implements ServerPlayer {
         // nop
     }
 
-    public TellHand(player: TumppuPlayer, state: GameState): void {
+    public TellHands(player: Array<TumppuPlayer>, state: GameState): void {
         // nop
     }
 

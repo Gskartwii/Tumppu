@@ -1,10 +1,10 @@
 import { LocalGameState } from "./GameState";
 import { RenderCardSet, CardAspectRatio } from "./Hand";
-import { Card, CardSequence, Color } from "shared/Card";
-import { RenderCard, CardColors } from "./Card";
+import { Card, CardSequence, Color, WildcardCardType } from "shared/Card";
+import { RenderCard, CardColors, WildcardIcons } from "./Card";
 import { TumppuPlayer, RealPlayer } from "shared/Player";
 import Tween from "@rbxts/tween";
-import { InCubic } from "@rbxts/easing-functions";
+import { InCubic, OutCubic } from "@rbxts/easing-functions";
 
 const UpdateColorDuration = 1/4
 const UpdateColorEasing = InCubic
@@ -104,10 +104,25 @@ const PlayerDialogDisplayPosition = ColorDialogDisplayPosition
 const PlayerDialogPostDisplayPosition = ColorDialogPostDisplayPosition
 const PlayerDialogShowTweenInfo = ColorDialogShowTweenInfo
 const PlayerDialogHideTweenInfo = ColorDialogHideTweenInfo
+const PlayerDialogActivateDoneButtonTweenInfo = new TweenInfo(
+    1/8,
+    Enum.EasingStyle.Quart,
+    Enum.EasingDirection.Out,
+)
+const PlayerDialogDeactivateDoneButtonTweenInfo = new TweenInfo(
+    1/8,
+    Enum.EasingStyle.Quart,
+    Enum.EasingDirection.In,
+)
+const PlayerDialogActivateChoiceDuration = 1/8
+const PlayerDialogActivateChoiceEasing = OutCubic
+const PlayerDialogDeactivateChoiceDuration = 1/8
+const PlayerDialogDeactivateChoiceEasing = InCubic
 
 const PlayerDialogChoiceSize = new UDim2(1, 0, 1, 0)
 const PlayerDialogChoiceAspectRatio = 4
 const PlayerDialogChoiceColor = OpponentNameInactiveBackground
+const PlayerDialogChoiceActiveColor = Color3.fromRGB(0xF5, 0x00, 0x57)
 const PlayerDialogChoiceTextColor = new Color3(1, 1, 1)
 const PlayerDialogChoiceFont = Enum.Font.GothamBold
 const PlayerDialogChoicePadding = 8
@@ -119,6 +134,23 @@ const PlayerDialogChoiceLabelContainerPosition = new UDim2(.25, 0, 0, 0)
 const PlayerDialogChoiceLabelContainerSize = new UDim2(.75, 0, 1, 0)
 const PlayerDialogChoiceTextXAlignment = Enum.TextXAlignment.Left
 const PlayerDialogChoiceCanvasPadding = 16
+const PlayerDialogDoneButtonGrayoutFrameMinTransparency = 0.5
+const PlayerDialogDoneButtonGrayoutFrameMaxTransparency = 1
+
+const SpyCardsDialogPreDisplayPosition = ColorDialogPreDisplayPosition
+const SpyCardsDialogDisplayPosition = new UDim2(.5, 0, .5, 0)
+const SpyCardsDialogPostDisplayPosition = ColorDialogPostDisplayPosition
+const SpyCardsDialogShowTweenInfo = ColorDialogShowTweenInfo
+const SpyCardsDialogHideTweenInfo = ColorDialogHideTweenInfo
+const SpyCardsDialogActivateChoiceDuration = PlayerDialogActivateChoiceDuration
+const SpyCardsDialogDeactivateChoiceDuration = PlayerDialogDeactivateChoiceDuration
+const SpyCardsDialogActivateChoiceEasing = PlayerDialogActivateChoiceEasing
+const SpyCardsDialogDeactivateChoiceEasing = PlayerDialogDeactivateChoiceEasing
+const SpyCardsDialogInactiveColor = OpponentNameInactiveBackground
+const SpyCardsDialogActiveColor = PlayerDialogChoiceActiveColor
+
+const SpyCardsDialogPlayerButtonSize = new UDim2(1, 0, 1, 0)
+const SpyCardsDialogPlayerButtonAspectRatio = 1
 
 const TweenService = game.GetService("TweenService")
 const UserInputService = game.GetService("UserInputService")
@@ -582,20 +614,13 @@ class SequencePlayHandler {
 class OpponentRender {
     GameState: LocalGameState
     Player: TumppuPlayer
-
     RenderFrame?: Frame
-    AnimationQueue: AnimationQueue
     
-    private index: number
-    private baseFrame: GuiBase2d
-    private targetFrame: GuiBase2d
+    protected index: number
 
-    constructor(state: LocalGameState, queue: AnimationQueue, player: TumppuPlayer, baseFrame: GuiBase2d, targetFrame: GuiBase2d) {
+    constructor(state: LocalGameState, player: TumppuPlayer) {
         this.GameState = state
         this.Player = player
-        this.baseFrame = baseFrame
-        this.targetFrame = targetFrame
-        this.AnimationQueue = queue
 
         let index = state.Players.indexOf(player)
         let localIndex = state.Players.indexOf(state.LocalPlayer())
@@ -603,7 +628,7 @@ class OpponentRender {
         this.index = adjustedIndex
     }
 
-    private getOpponentData(): IOpponentData {
+    protected getOpponentData(): IOpponentData {
         let thisOppData = OpponentData.get(this.GameState.Players.size())!
         return thisOppData[this.index]
     }
@@ -622,28 +647,20 @@ class OpponentRender {
         return ("https://www.roblox.com/asset-thumbnail/image?assetId=%d&width=352&height=352&format=png").format(OpponentBotAsset)
     }
 
-    public Render(): void {
+    public Render(): Frame {
         if (this.RenderFrame !== undefined) {
             this.RenderFrame.Destroy()
         }
-        let data = this.getOpponentData()
         let renderFrame = new Instance("Frame")
         this.RenderFrame = renderFrame
-        renderFrame.Name = this.Name()
-        renderFrame.AnchorPoint = data.AnchorPoint
+        renderFrame.Name = "OpponentRender"
         renderFrame.Size = OpponentFrameSize
-        renderFrame.Position = data.Position
         renderFrame.BackgroundColor3 = OpponentFrameBackground
         renderFrame.BorderColor3 = OpponentFrameBorder
         renderFrame.BorderSizePixel = OpponentFrameBorderSize
-        renderFrame.ZIndex = OpponentFrameZIndex
 
         let renderAspectRatioConstraint = new Instance("UIAspectRatioConstraint", renderFrame)
         renderAspectRatioConstraint.AspectRatio = OpponentFrameAspectRatio
-
-        let renderSizeConstraint = new Instance("UISizeConstraint", renderFrame)
-        renderSizeConstraint.MinSize = new Vector2(OpponentFrameMinSize, OpponentFrameMinSize)
-        renderSizeConstraint.MaxSize = new Vector2(OpponentFrameMaxSize, OpponentFrameMaxSize)
 
         let headshot = new Instance("ImageLabel", renderFrame)
         headshot.Name = "Headshot"
@@ -657,6 +674,7 @@ class OpponentRender {
         playerNameContainer.Position = OpponentNameBackgroundPosition
         playerNameContainer.BackgroundColor3 = OpponentNameInactiveBackground
         playerNameContainer.BorderSizePixel = 0
+        playerNameContainer.Name = "NameContainer"
 
         let playerNamePadding = new Instance("UIPadding", playerNameContainer)
         const padding = new UDim(0, OpponentNamePadding)
@@ -672,12 +690,26 @@ class OpponentRender {
         playerNameText.Font = OpponentNameFont
         playerNameText.TextScaled = true
         playerNameText.Size = new UDim2(1, 0, 1, 0)
+        playerNameText.Name = "PaddedLabel"
 
         let playerNameTextSizeConstraint = new Instance("UITextSizeConstraint", playerNameText)
         playerNameTextSizeConstraint.MinTextSize = OpponentNameMinSize
         playerNameTextSizeConstraint.MaxTextSize = OpponentNameMaxSize
 
-        renderFrame.Parent = this.baseFrame
+        return renderFrame
+    }
+}
+
+class BaseFrameOpponentRender extends OpponentRender {
+    AnimationQueue: AnimationQueue
+    private baseFrame: GuiBase2d
+    private targetFrame: GuiBase2d
+
+    constructor(state: LocalGameState, player: TumppuPlayer, queue: AnimationQueue, baseFrame: GuiBase2d, targetFrame: GuiBase2d) {
+        super(state, player)
+        this.baseFrame = baseFrame
+        this.targetFrame = targetFrame
+        this.AnimationQueue = queue
     }
 
     private getCardPosition(): Vector2 {
@@ -692,6 +724,22 @@ class OpponentRender {
     private getCardSize(): Vector2 {
         const height = this.RenderFrame!.AbsoluteSize.Y
         return new Vector2(height * CardAspectRatio, height)
+    }
+
+    public Render(): Frame {
+        const renderFrame = super.Render()
+        const data = this.getOpponentData()
+
+        let renderSizeConstraint = new Instance("UISizeConstraint", renderFrame)
+        renderSizeConstraint.MinSize = new Vector2(OpponentFrameMinSize, OpponentFrameMinSize)
+        renderSizeConstraint.MaxSize = new Vector2(OpponentFrameMaxSize, OpponentFrameMaxSize)
+
+        renderFrame.AnchorPoint = data.AnchorPoint
+        renderFrame.Position = data.Position
+        renderFrame.ZIndex = OpponentFrameZIndex
+        renderFrame.Parent = this.baseFrame
+
+        return renderFrame
     }
 
     public AnimatePlayCards(seq: CardSequence): Promise<Array<Instance>> {
@@ -809,7 +857,7 @@ class OpponentRender {
 }
 
 class ColorDialog {
-    AnimationQueue: AnimationQueue
+    AnimationQueue: AnimationQueue = new AnimationQueue
     private dialog: Frame
     private redButton: GuiButton
     private blueButton: GuiButton
@@ -819,8 +867,7 @@ class ColorDialog {
     private pendingResolve?: (color: Color) => void
     private connections: Map<GuiButton, RBXScriptConnection> = new Map()
 
-    constructor(animationQueue: AnimationQueue, dialog: Frame) {
-        this.AnimationQueue = animationQueue
+    constructor(dialog: Frame) {
         this.dialog = dialog
         dialog.Position = ColorDialogPreDisplayPosition
 
@@ -903,26 +950,54 @@ class ColorDialog {
 }
 
 class PlayerDialog {
-    AnimationQueue: AnimationQueue
+    AnimationQueue: AnimationQueue = new AnimationQueue
     private dialog: Frame
-    private pendingResolve?: (player: TumppuPlayer) => void
+    private pendingResolve?: (players: Array<TumppuPlayer>) => void
     private connections: Array<RBXScriptConnection> = []
+    private chosenPlayers: Array<TumppuPlayer> = []
+    private maxNumChoices?: number
     
-    constructor(animationQueue: AnimationQueue, dialog: Frame) {
-        this.AnimationQueue = animationQueue
+    constructor(dialog: Frame) {
         this.dialog = dialog
         this.dialog.Position = PlayerDialogPreDisplayPosition
     }
 
-    private setCard(card: Card) {
-        if (!card.IsWildcard()) {
-            error("can't set non-wildcard icon")
+    private configureForCards(cardType: WildcardCardType, count: number) {
+        const header = this.dialog.FindFirstChild("Header")!
+
+        const iconData = WildcardIcons.get(cardType)!
+        const thisImage = header.FindFirstChild<ImageLabel>("CardIcon")!
+        thisImage.Image = iconData.spriteSheet
+        thisImage.ImageRectOffset = iconData.position
+        thisImage.ImageRectSize = iconData.size
+
+        const headerText = header.FindFirstChild("LabelContainer")!.FindFirstChild<TextLabel>("PaddedLabel")!
+        if (count === 1) {
+            headerText.Text = "Choose a player"
+        } else {
+            headerText.Text = "Choose %d players".format(count)
+        }
+
+        const details = this.dialog.FindFirstChild("DetailTextContainer")!.FindFirstChild<TextLabel>("PaddedLabel")!
+        switch (cardType) {
+        case WildcardCardType.Democracy:
+            details.Text = "You will vote this player to draw cards."
+            break
+        case WildcardCardType.Dictator:
+            details.Text = "This player will draw 4 cards."
+            break
+        case WildcardCardType.Exchange:
+            details.Text = "You will exchange cards with this player."
+            break
+        case WildcardCardType.Spy:
+            details.Text = "You will see the cards of these players."
+            break
         }
     }
 
     private connectPlayer(index: number, render: OpponentRender) {
         const choice = new Instance("TextButton")
-        choice.Name = render.Name()
+        choice.Name = "PlayerChoice"
         choice.LayoutOrder = index
         // Position delegated to UIListLayout
         choice.Size = PlayerDialogChoiceSize
@@ -974,19 +1049,89 @@ class PlayerDialog {
         const imageARConstraint = new Instance("UIAspectRatioConstraint", playerImage)
         imageARConstraint.AspectRatio = PlayerDialogChoiceImageAspectRatio
 
-        // TODO: Visual animation on choice?
-        // also for color dialog?
         this.connections.push(choice.Activated.Connect(() => {
-            for (const conn of this.connections) {
-                conn.Disconnect()
-            }
-            this.connections = []
+            const choiceIndex = this.chosenPlayers.indexOf(render.Player)
+            const doneButton = this.dialog.FindFirstChild<GuiButton>("DoneButton")!
+            const grayOutFrame = doneButton.FindFirstChild<Frame>("GrayoutFrame")!
 
-            if (this.pendingResolve !== undefined) {
-                this.pendingResolve(render.Player)
-            }
+            if (choiceIndex === -1) {
+                if (this.maxNumChoices === this.chosenPlayers.size()) {
+                    return
+                }
+                this.chosenPlayers.push(render.Player)
 
-            this.animateHide()
+                this.AnimationQueue.QueueAnimation(async () => {
+                    let toWait = []
+                    toWait.push(new Promise((resolve) => {
+                        Promise.spawn(() => {
+                            Tween(
+                                PlayerDialogActivateChoiceDuration,
+                                PlayerDialogActivateChoiceEasing,
+                                (color) => choice.BackgroundColor3 = color,
+                                choice.BackgroundColor3,
+                                PlayerDialogChoiceActiveColor).Wait()
+                            resolve()
+                        })
+                    }))
+                    if (this.chosenPlayers.size() === this.maxNumChoices) {
+                        doneButton.Active = true
+                        toWait.push(new Promise((resolve) => {
+                            let tween = TweenService.Create(
+                                grayOutFrame,
+                                PlayerDialogActivateDoneButtonTweenInfo,
+                                {
+                                    BackgroundTransparency: PlayerDialogDoneButtonGrayoutFrameMaxTransparency
+                                }
+                            )
+                            tween.Play()
+                            Promise.spawn(() => {
+                                tween.Completed.Wait()
+                                resolve()
+                            })
+                        }))
+                    }
+
+                    await Promise.all(toWait)
+                })
+            } else {
+                const oldSize = this.chosenPlayers.size()
+                this.chosenPlayers.remove(choiceIndex)
+
+                this.AnimationQueue.QueueAnimation(async () => {
+                    let toWait = []
+                    toWait.push(new Promise((resolve) => {
+                        Promise.spawn(() => {
+                            Tween(
+                                PlayerDialogDeactivateChoiceDuration,
+                                PlayerDialogDeactivateChoiceEasing,
+                                (color) => choice.BackgroundColor3 = color,
+                                choice.BackgroundColor3,
+                                PlayerDialogChoiceColor).Wait()
+                            resolve()
+                        })
+                    }))
+
+                    if (oldSize === this.maxNumChoices) {
+                        doneButton.Active = true
+                        toWait.push(new Promise((resolve) => {
+                            let tween = TweenService.Create(
+                                grayOutFrame,
+                                PlayerDialogDeactivateDoneButtonTweenInfo,
+                                {
+                                    BackgroundTransparency: PlayerDialogDoneButtonGrayoutFrameMinTransparency
+                                }
+                            )
+                            tween.Play()
+                            Promise.spawn(() => {
+                                tween.Completed.Wait()
+                                resolve()
+                            })
+                        }))
+                    }
+
+                    await Promise.all(toWait)
+                })
+            }
         }))
 
         choice.Parent = this.dialog.FindFirstChild("PlayersFrame")
@@ -1035,10 +1180,11 @@ class PlayerDialog {
         })
     }
 
-    public AskPlayer(card: Card, opponentRenders: Array<OpponentRender>): Promise<TumppuPlayer> {
+    public AskPlayers(cardType: WildcardCardType, count: number, opponentRenders: Array<OpponentRender>): Promise<Array<TumppuPlayer>> {
         return new Promise((resolve) => {
             this.pendingResolve = resolve
-            this.setCard(card)
+            this.maxNumChoices = count
+            this.configureForCards(cardType, count)
 
             const playersFrame = this.dialog.FindFirstChild<ScrollingFrame>("PlayersFrame")!
             // don't ClearAlLChildren, we need to keep padding and layout delegate
@@ -1052,9 +1198,216 @@ class PlayerDialog {
                 1, -PlayerDialogChoiceCanvasPadding * 2,
                 1/4 * 3/4 * opponentRenders.size(), -PlayerDialogChoiceCanvasPadding * 2,
             )
+
             for (const [i, render] of opponentRenders.entries()) {
                 this.connectPlayer(i, render)
             }
+
+            const doneButton =  this.dialog.FindFirstChild<GuiButton>("DoneButton")!
+            doneButton.Active = false
+            this.connections.push(doneButton.Activated.Connect(() => {
+                if (this.chosenPlayers.size() !== this.maxNumChoices) {
+                    return
+                }
+                for (const conn of this.connections) {
+                    conn.Disconnect()
+                }
+                this.connections = []
+
+                if (this.pendingResolve !== undefined) {
+                    this.pendingResolve(this.chosenPlayers)
+                }
+                this.chosenPlayers = []
+
+                this.animateHide()
+            }))
+
+            this.animateShow()
+        })
+    }
+}
+
+class PresentCardsDialog {
+    GameState: LocalGameState
+    AnimationQueue: AnimationQueue = new AnimationQueue
+    private dialog: Frame
+    private connections: Array<RBXScriptConnection> = []
+    private playerCards: Map<TumppuPlayer, Array<Card>> = new Map()
+    private currentHandRender?: RenderCardSet
+    private mouse: Mouse
+    private pendingResolve?: () => void
+
+    private currentlyShownPlayer?: TumppuPlayer
+    private playerButtons: Map<TumppuPlayer, TextButton> = new Map()
+
+    constructor(state: LocalGameState, dialog: Frame, mouse: Mouse) {
+        this.GameState = state
+        this.dialog = dialog
+        this.dialog.Position = SpyCardsDialogPreDisplayPosition
+        this.mouse = mouse
+    }
+
+    private renderPlayerHand(player: TumppuPlayer) {
+        const cards = this.playerCards.get(player)!
+        const renderFrame = this.dialog.FindFirstChild<Frame>("OpponentCardsRender")!
+        if (this.currentHandRender !== undefined) {
+            this.currentHandRender.Destroy()
+        }
+        this.currentHandRender = new RenderCardSet(cards, renderFrame, this.mouse)
+        this.currentHandRender.Render()
+    }
+
+    private animateShowPlayerCards(player: TumppuPlayer) {
+        this.AnimationQueue.QueueAnimation(() => {
+            return new Promise((resolve) => {
+                const previousPlayer = this.currentlyShownPlayer
+                this.currentlyShownPlayer = player
+                let toWait = []
+
+                if (previousPlayer !== undefined) {
+                    const previousButton = this.playerButtons.get(previousPlayer)!
+                    const previousColored = previousButton
+                        .FindFirstChild("OpponentRender")!
+                        .FindFirstChild<Frame>("NameContainer")!
+                    toWait.push(new Promise((resolve) => {
+                        Promise.spawn(() => {
+                            Tween(
+                                SpyCardsDialogDeactivateChoiceDuration,
+                                SpyCardsDialogDeactivateChoiceEasing,
+                                (color) => previousColored.BackgroundColor3 = color,
+                                previousColored.BackgroundColor3,
+                                SpyCardsDialogInactiveColor).Wait()
+                            resolve()
+                        })
+                    }))
+                }
+
+                const thisColored = this.playerButtons
+                    .get(player)!
+                    .FindFirstChild("OpponentRender")!
+                    .FindFirstChild<Frame>("NameContainer")!
+
+                toWait.push(new Promise((resolve) => {
+                    Promise.spawn(() => {
+                        Tween(SpyCardsDialogActivateChoiceDuration,
+                            SpyCardsDialogActivateChoiceEasing,
+                            (color) => thisColored.BackgroundColor3 = color,
+                            thisColored.BackgroundColor3,
+                            SpyCardsDialogActiveColor).Wait()
+                        resolve()
+                    })
+                }))
+
+                Promise.all(toWait).then(() => {
+                    this.renderPlayerHand(player)
+                    resolve()
+                })
+            })
+        })
+    }
+
+    private connectPlayer(player: TumppuPlayer) {
+        const playerButton = new Instance("TextButton")
+        playerButton.Size = SpyCardsDialogPlayerButtonSize
+        playerButton.AutoButtonColor = false
+        playerButton.BackgroundTransparency = 1
+
+        const arConstraint = new Instance("UIAspectRatioConstraint", playerButton)
+        arConstraint.AspectRatio = SpyCardsDialogPlayerButtonAspectRatio
+
+        const playerRender = new OpponentRender(this.GameState, player).Render()
+        playerRender.Size = SpyCardsDialogPlayerButtonSize
+        playerRender.Parent = playerButton
+
+        this.connections.push(playerButton.Activated.Connect(() => {
+            if (this.currentlyShownPlayer === player) {
+                return
+            }
+            this.animateShowPlayerCards(player)
+        }))
+        this.playerButtons.set(player, playerButton)
+
+        playerButton.Parent = this.dialog.FindFirstChild("PlayersContainer")
+    }
+
+    private animateShow() {
+        this.AnimationQueue.QueueAnimation(() => {
+            return new Promise((resolve) => {
+                const tween = TweenService.Create(
+                    this.dialog,
+                    SpyCardsDialogShowTweenInfo,
+                    {
+                        Position: SpyCardsDialogDisplayPosition,
+                    }
+                )
+
+                tween.Play()
+
+                Promise.spawn(() => {
+                    tween.Completed.Wait()
+                    resolve()
+                })
+            })
+        })
+    }
+
+    private animateHide() {
+        this.AnimationQueue.QueueAnimation(() => {
+            return new Promise((resolve) => {
+                const tween = TweenService.Create(
+                    this.dialog,
+                    SpyCardsDialogHideTweenInfo,
+                    {
+                        Position: SpyCardsDialogPostDisplayPosition,
+                    }
+                )
+
+                tween.Play()
+
+                Promise.spawn(() => {
+                    tween.Completed.Wait()
+                    this.dialog.Position = SpyCardsDialogPreDisplayPosition
+                    resolve()
+                })
+            })
+        })
+    }
+
+    public PresentCards(playerCards: Map<TumppuPlayer, Array<Card>>): Promise<void> {
+        return new Promise((resolve) => {
+            this.pendingResolve = resolve
+            this.playerCards = playerCards
+
+            for (let container of this.dialog.FindFirstChild("PlayersContainer")!.GetChildren()) {
+                if (container.IsA("TextButton")) {
+                    container.Destroy()
+                }
+            }
+
+            for (let [player, cards] of playerCards) {
+                this.connectPlayer(player)
+            }
+
+            const firstPlayer = playerCards.keys()[0]
+            this.playerButtons.get(firstPlayer)!
+                .FindFirstChild("OpponentRender")!
+                .FindFirstChild<Frame>("NameContainer")!
+                .BackgroundColor3 = SpyCardsDialogActiveColor
+            this.renderPlayerHand(firstPlayer)
+            this.currentlyShownPlayer = firstPlayer
+
+            this.connections.push(this.dialog.FindFirstChild<GuiButton>("DoneButton")!.Activated.Connect(() => {
+                for (let connection of this.connections) {
+                    connection.Disconnect()
+                }
+                this.connections = []
+
+                this.animateHide()
+                if (this.pendingResolve !== undefined) {
+                    this.pendingResolve()
+                }
+                this.playerButtons = new Map()
+            }))
 
             this.animateShow()
         })
@@ -1070,8 +1423,11 @@ export class GameView {
     private playHandler: SequencePlayHandler
     private colorHandler: ColorDialog
     private playerChoiceHandler: PlayerDialog
-    private opponentRenders: Map<TumppuPlayer, OpponentRender>
+    private presentCardsHandler: PresentCardsDialog
+    private opponentRenders: Map<TumppuPlayer, BaseFrameOpponentRender>
     private drawButtonLabel: TextLabel
+
+    private dialogQueue: AnimationQueue
 
     constructor(options: {
         state: LocalGameState,
@@ -1082,23 +1438,26 @@ export class GameView {
         drawButton: GuiButton,
         colorDialog: Frame,
         playerDialog: Frame,
+        presentCardsDialog: Frame,
         mouse: Mouse}) {
         this.GameState = options.state
 
         this.animationQueue = new AnimationQueue
+        this.dialogQueue = new AnimationQueue
         this.handRender = new RenderCardSet(options.state.LocalPlayer().Hand!.Cards, options.handFrame, options.mouse)
         this.queueRender = new RenderCardSet([], options.queueFrame, options.mouse)
         this.queueRender.UseStandardOrder = false
         this.deckRender = new RenderDecks(options.deckContainer)
         this.playHandler = new SequencePlayHandler(options.state, this.animationQueue, this.handRender, this.queueRender, options.baseFrame, options.deckContainer, options.drawButton)
-        this.colorHandler = new ColorDialog(this.animationQueue, options.colorDialog)
-        this.playerChoiceHandler = new PlayerDialog(this.animationQueue, options.playerDialog)
+        this.colorHandler = new ColorDialog(options.colorDialog)
+        this.playerChoiceHandler = new PlayerDialog(options.playerDialog)
+        this.presentCardsHandler = new PresentCardsDialog(this.GameState, options.presentCardsDialog, options.mouse)
         this.opponentRenders = new Map(this.GameState.Players
             .filter((player) => player !== this.GameState.LocalPlayer())
-            .map((player) => [player, new OpponentRender(
+            .map((player) => [player, new BaseFrameOpponentRender(
                 this.GameState,
-                this.animationQueue,
                 player,
+                this.animationQueue,
                 options.baseFrame,
                 options.deckContainer)]))
         this.drawButtonLabel = options.drawButton
@@ -1136,19 +1495,29 @@ export class GameView {
 
     public AskColor(): Promise<Color> {
         return new Promise((resolve) => {
-            this.colorHandler.AskColor().then((color) => {
-                this.animationQueue.QueueAnimation(async () => {
-                    await this.deckRender.AnimateUpdateColor(color)
+            this.dialogQueue.QueueAnimation(() => {
+                return new Promise((resolveDialog) => {
+                    this.colorHandler.AskColor().then((color) => {
+                        this.animationQueue.QueueAnimation(async () => {
+                            await this.deckRender.AnimateUpdateColor(color)
+                        })
+                        resolve(color)
+                        resolveDialog()
+                    })
                 })
-                resolve(color)
             })
         })
     }
 
-    public AskPlayer(card: Card): Promise<TumppuPlayer> {
+    public AskPlayers(cardType: WildcardCardType, count: number): Promise<Array<TumppuPlayer>> {
         return new Promise((resolve) => {
-            this.playerChoiceHandler.AskPlayer(card, this.opponentRenders.values()).then((player) => {
-                resolve(player)
+            this.dialogQueue.QueueAnimation(() => {
+                return new Promise((resolveDialog) => {
+                    this.playerChoiceHandler.AskPlayers(cardType, count, this.opponentRenders.values()).then((players) => {
+                        resolve(players)
+                        resolveDialog()
+                    })
+                })
             })
         })
     }
@@ -1209,6 +1578,14 @@ export class GameView {
     public QueueUpdateDrawButton(comboSeq: CardSequence | undefined): void {
         this.animationQueue.QueueAnimation(async () => {
             this.updateDrawButton(comboSeq)
+        })
+    }
+
+    public PresentCards(playerCards: Map<TumppuPlayer, Array<Card>>): void {
+        this.dialogQueue.QueueAnimation(() => {
+            return new Promise((resolve) => {
+                this.presentCardsHandler.PresentCards(playerCards).then(resolve)
+            })
         })
     }
 }

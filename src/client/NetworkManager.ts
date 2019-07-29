@@ -1,13 +1,13 @@
 import { LocalGameState } from "./GameState";
 import { ClientEvent } from "@rbxts/net";
-import { ISerializedCard, CardSequence, Color } from "shared/Card";
+import { ISerializedCard, CardSequence, Color, WildcardCardType } from "shared/Card";
 import { GameView } from "./GameView";
-import { TargetedWildcard } from "shared/Player";
 
 const tellDraw = new ClientEvent("TellDraw")
 const tellPlay = new ClientEvent("TellPlay")
 const tellColor = new ClientEvent("TellColor")
 const tellVoteCompleted = new ClientEvent("TellVoteCompleted")
+const tellHands=  new ClientEvent("TellHands")
 const askReady = new ClientEvent("AskReady")
 const askPlay = new ClientEvent("AskPlay")
 const askColor = new ClientEvent("AskColor")
@@ -87,13 +87,13 @@ export class NetworkManager {
             this.gameView.OpponentChoseColor(color)
         })
 
-        askVote.Connect(async () => {
-            print("asked player")
+        askVote.Connect(async (cardType: WildcardCardType, count: number) => {
+            print("asked players")
             // TODO: don't close dialog if it's democracy
             // instead show waiting animation
-            let player = await this.gameView.AskPlayer(this.GameState.LastCard())
+            let players = await this.gameView.AskPlayers(cardType, count)
 
-            askVote.SendToServer(this.GameState.SerializePlayer(player))
+            askVote.SendToServer(players.map((player) => this.GameState.SerializePlayer(player)))
         })
 
         tellVoteCompleted.Connect((results: Array<[number, number]>) => {
@@ -103,8 +103,18 @@ export class NetworkManager {
                     this.GameState.DeserializePlayer(target),
                 ]));
 
-            // FIXME: assume only one vote
-            (state.LastCard() as TargetedWildcard).TargetPlayer = resultMap.values()[0]
+            print("Received some votes")
+        })
+
+        tellHands.Connect((hands: Array<[number, Array<ISerializedCard>]>) => {
+            const playerCards = new Map(hands
+                .map(([player, cards]) => [ 
+                    this.GameState.DeserializePlayer(player),
+                    cards.map((card) => state.DeserializeCard(card))
+                ])
+            )
+
+            this.gameView.PresentCards(playerCards)
         })
 
         askReady.Connect(() => {

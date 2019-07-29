@@ -24,13 +24,14 @@ export class RenderCardSet {
     CardRenders: Map<Card, TextButton> = new Map()
     private ownedCardRenders: Map<TextButton, boolean> = new Map()
     Mouse: Mouse
+    private mouseConnection: RBXScriptConnection
 
     constructor(hand: Array<Card>, frame: Frame, mouse: Mouse) {
         this.Hand = hand
         this.RenderFrame = frame
         this.Mouse = mouse
 
-        mouse.Move.Connect(() => {
+        this.mouseConnection = mouse.Move.Connect(() => {
             if (!this.canDelegate()) {
                 this.tweenCardsToPosition(this.getCardRelativePositions(), MouseMoveTweenInfo)
             }
@@ -346,5 +347,16 @@ export class RenderCardSet {
 
     public GetAbsolutePosition(): Vector2 {
         return this.RenderFrame.AbsolutePosition
+    }
+
+    public Destroy(): void {
+        this.mouseConnection.Disconnect()
+        for (let [render, isOwned] of this.ownedCardRenders) {
+            if (isOwned) {
+                render.Destroy()
+            }
+        }
+
+        // don't destroy RenderFrame here, it may be owned by somebody else
     }
 }

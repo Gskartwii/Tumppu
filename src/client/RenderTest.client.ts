@@ -26,6 +26,8 @@ const colorDialog = baseFrame
     .WaitForChild<Frame>("ColorDialog")
 const playerChoiceDialog = baseFrame
     .WaitForChild<Frame>("PlayerChoiceDialog")
+const presentCardsDialog = baseFrame
+    .WaitForChild<Frame>("OpponentCardsDialog")
 
 tellState.Connect((serializedState: ISerializedGameState) => {
     let state = DeserializeState(serializedState)
@@ -38,6 +40,7 @@ tellState.Connect((serializedState: ISerializedGameState) => {
         drawButton: drawButton,
         colorDialog: colorDialog,
         playerDialog: playerChoiceDialog,
+        presentCardsDialog: presentCardsDialog,
         mouse: localPlayer.GetMouse(),
     }))
 })

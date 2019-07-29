@@ -1,6 +1,6 @@
 import { GameState } from "shared/GameState";
 import { ServerPlayer, ServerGameState } from "./GameState";
-import { Color, Card, CardSequence } from "shared/Card";
+import { Color, Card, CardSequence, WildcardCardType } from "shared/Card";
 import Net from "@rbxts/net";
 import { RealPlayer, TumppuPlayer } from "shared/Player";
 
@@ -14,7 +14,7 @@ const tellPlay = new Net.ServerEvent("TellPlay")
 const tellDraw = new Net.ServerEvent("TellDraw")
 const tellColor = new Net.ServerEvent("TellColor")
 const tellVoteCompleted = new Net.ServerEvent("TellVoteCompleted")
-const tellHand = new Net.ServerEvent("TellHand")
+const tellHands = new Net.ServerEvent("TellHands")
 
 function connectOnce<T extends Array<unknown>>(event: Net.ServerEvent, forPlayer: RealPlayer): Promise<T> {
     return new Promise((resolve, reject) => {
@@ -57,18 +57,22 @@ export class ServerRealPlayer extends RealPlayer implements ServerPlayer {
         return (await result)[0]
     }
 
-    public AskVote(state: GameState): Promise<TumppuPlayer> {
+    public AskVote(cardType: WildcardCardType, count: number, state: GameState): Promise<Array<TumppuPlayer>> {
         return new Promise((resolve, reject) => {
-            let result = connectOnce<[number]>(askVote, this).then((returns) => {
-                const index = returns[0]
-                const votedPlayer = state.DeserializePlayer(index)
-                if (votedPlayer === this) {
+            connectOnce<[Array<number>]>(askVote, this).then((returns) => {
+                const playerIndexes = returns[0]
+                const votedPlayers = playerIndexes.map((player) => state.DeserializePlayer(player))
+                if (votedPlayers.some((player) => player === this)) {
                     error("Can't vote for self")
                 }
-                resolve(votedPlayer)
+
+                if (votedPlayers.size() !== count) {
+                    error("Count of votes didn't match what was asked for")
+                }
+                resolve(votedPlayers)
             })
 
-            askVote.SendToPlayer(this.Player)
+            askVote.SendToPlayer(this.Player, cardType, count)
         })
     }
 
@@ -105,8 +109,14 @@ export class ServerRealPlayer extends RealPlayer implements ServerPlayer {
                 state.SerializePlayer(entry[1])]))
     }
 
-    public TellHand(player: TumppuPlayer, state: GameState): void {
-        tellHand.SendToPlayer(this.Player, state.SerializePlayer(player), player.Hand!.Cards.map((card) => state.SerializeCard(card)))
+    public TellHands(players: Array<TumppuPlayer>, state: GameState): void {
+        tellHands.SendToPlayer(this.Player, 
+            players.map((player) => {
+                return [
+                    state.SerializePlayer(player),
+                    player.Hand!.Cards
+                        .map((card) => state.SerializeCard(card))]
+            }))
     }
 
     public DrawCards(n: number, endCombo: boolean, state: ServerGameState): Array<Card> {

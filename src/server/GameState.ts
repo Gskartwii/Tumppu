@@ -1,11 +1,11 @@
 import { GameState } from '../shared/GameState'
-import { Color, Card, Wildcard, WildcardCardType, CardSequence } from 'shared/Card';
+import { Color, Card, WildcardCardType, CardSequence } from 'shared/Card';
 import { TumppuPlayer, TargetedWildcard } from 'shared/Player';
 
 export interface ServerPlayer extends TumppuPlayer {
     AskPlay(state: GameState, canDraw: boolean): Promise<CardSequence | boolean>
     AskColor(state: GameState): Promise<Color>
-    AskVote(state: GameState): Promise<TumppuPlayer>
+    AskVote(cardType: WildcardCardType, count: number, state: GameState): Promise<Array<TumppuPlayer>>
     AskReady(): Promise<void>
 
     TellState(state: GameState): void
@@ -13,7 +13,7 @@ export interface ServerPlayer extends TumppuPlayer {
     TellDraw(player: TumppuPlayer, cards: Array<Card>, endCombo: boolean, state: GameState): void
     TellColor(color: Color, state: GameState): void
     TellVoteCompleted(votes: Map<TumppuPlayer, TumppuPlayer>, state: GameState): void
-    TellHand(player: TumppuPlayer, state: GameState): void
+    TellHands(players: Array<TumppuPlayer>, state: GameState): void
 
     DrawCards(n: number, endCombo: boolean, state: ServerGameState): Array<Card>
 }
@@ -72,11 +72,11 @@ export class ServerGameState extends GameState {
                 switch (card.CardType) {
                 case WildcardCardType.Democracy:
                 case WildcardCardType.Dictator:
-                    toWait.push(this.askAndAnnounceTargetPlayer(this.CurrentPlayer(), card))
+                    toWait.push(this.askTargetPlayers(this.CurrentPlayer(), [card]))
                     break
                 }
 
-                Promise.all<Color | ServerPlayer>(toWait).then(() => {
+                Promise.all<Color | Array<ServerPlayer>>(toWait).then(() => {
                     // Once the target player is in place, check if we need to draw cards
                     switch (card.CardType) {
                     case WildcardCardType.Dictator:
@@ -120,15 +120,15 @@ export class ServerGameState extends GameState {
         })
     }
 
-    protected askAndAnnounceTargetPlayer(playerToAsk: ServerPlayer, card: Card): Promise<ServerPlayer> {
+    protected askTargetPlayers(playerToAsk: ServerPlayer, cards: Array<TargetedWildcard>): Promise<Array<ServerPlayer>> {
         return new Promise((resolve, reject) => {
-            playerToAsk.AskVote(this).then((targetPlayer) => {
-                (card as TargetedWildcard).TargetPlayer = targetPlayer
-
-                for (let player of this.playersExcept(playerToAsk)) {
-                    player.TellVoteCompleted(new Map().set(playerToAsk, targetPlayer), this)
+            playerToAsk.AskVote(cards[0].CardType, cards.size(), this).then((targetPlayers) => {
+                for (let [index, card] of cards.entries()) {
+                    card.TargetPlayer = targetPlayers[index]
                 }
-                resolve(targetPlayer as ServerPlayer)
+
+                // For now, only announce vote results for DMC
+                resolve(targetPlayers as Array<ServerPlayer>)
             })
         })
     }
@@ -166,16 +166,18 @@ export class ServerGameState extends GameState {
         if (this.IsComboMode()) {
             return new Promise((resolve, reject) => {
                 let toWait = []
-                for (let card of cards.Cards) {
-                    if (card.IsWildcard() && card.CardType === WildcardCardType.Spy) {
-                        toWait.push(this.askAndAnnounceTargetPlayer(player as ServerPlayer, card).then((targetPlayer) => {
-                            (card as TargetedWildcard).TargetPlayer = targetPlayer;
-                            (player as ServerPlayer).TellHand(targetPlayer, this)
-                        }))
-                    }
+                let spyCards = cards.Cards.filter((card) => card.IsWildcard() && card.CardType === WildcardCardType.Spy)
+                if (spyCards.size() !== 0) {
+                    toWait.push(this.askTargetPlayers(player as ServerPlayer, spyCards as Array<TargetedWildcard>).then((targetPlayers) => {
+                        (player as ServerPlayer).TellHands(targetPlayers, this)
+                    }))
                 }
 
                 Promise.all(toWait).then(() => {
+                    if (spyCards.size() === cards.Cards.size()) {
+                        this.EndCombo().then(resolve)
+                        return
+                    }
                     super.handleCardsComboMode(player, cards)
                     resolve()
                 }, reject)
@@ -188,13 +190,15 @@ export class ServerGameState extends GameState {
             if (cards.Cards[0].IsWildcard()) {
                 switch (cards.Cards[0].CardType) {
                 case WildcardCardType.Dictator:
-                    {
-                        for (let card of cards.Cards) {
-                            toWait.push(this.askAndAnnounceTargetPlayer(player as ServerPlayer, card).then((targetPlayer) => {
-                                targetPlayer.DrawCards(card.DrawValue(), false, this)
-                            }))
+                    toWait.push(this.askTargetPlayers(player as ServerPlayer, cards.Cards as Array<TargetedWildcard>).then((targetPlayers) => {
+                        let countDraws = targetPlayers.reduce((map, player) => {
+                            map.set(player, (map.get(player) || 0) + 1)
+                            return map
+                        }, new Map<ServerPlayer, number>())
+                        for (let [targetPlayer, count] of countDraws) {
+                            targetPlayer.DrawCards(cards.Cards[0].DrawValue() * count, false, this)
                         }
-                    }
+                    }))
                     break
                 case WildcardCardType.Everybody:
                     {
@@ -213,21 +217,19 @@ export class ServerGameState extends GameState {
                     }
                     break
                 case WildcardCardType.Spy:
-                    {
-                        for (let card of cards.Cards) {
-                            toWait.push(this.askAndAnnounceTargetPlayer(player as ServerPlayer, card).then((targetPlayer) => {
-                                (card as TargetedWildcard).TargetPlayer = targetPlayer;
-                                (player as ServerPlayer).TellHand(targetPlayer, this)
-                            }))
-                        }
-                    }
+                    toWait.push(this.askTargetPlayers(player as ServerPlayer, cards.Cards as Array<TargetedWildcard>).then((targetPlayers) => {
+                        (player as ServerPlayer).TellHands(targetPlayers, this)
+                    }))
                     break
                 case WildcardCardType.Exchange:
-                    let myHand = player.Hand
-                    let targetPlayer = (cards.Cards[0] as TargetedWildcard).TargetPlayer!
-                    let targetHand = targetPlayer.Hand
-                    player.Hand = targetHand
-                    targetPlayer.Hand = myHand
+                    toWait.push(this.askTargetPlayers(player as ServerPlayer, [cards.Cards[0] as TargetedWildcard]).then((targetPlayers) => {
+                        // TODO: implement switch logic
+                        const targetPlayer = targetPlayers[0]
+                        let myHand = player.Hand
+                        let targetHand = targetPlayer.Hand
+                        player.Hand = targetHand
+                        targetPlayer.Hand = myHand
+                    }))
                     break
                 }
                 toWait.push(this.askAndAnnounceColor(player as ServerPlayer, cards.Cards[cards.Cards.size() - 1]))
