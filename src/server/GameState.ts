@@ -168,6 +168,9 @@ export class ServerGameState extends GameState {
                 let toWait = []
                 let spyCards = cards.Cards.filter((card) => card.IsWildcard() && card.CardType === WildcardCardType.Spy)
                 if (spyCards.size() !== 0) {
+                    if (spyCards.size() > this.Players.size()) {
+                        spyCards = spyCards.slice(0, this.Players.size())
+                    }
                     toWait.push(this.askTargetPlayers(player as ServerPlayer, spyCards as Array<TargetedWildcard>).then((targetPlayers) => {
                         (player as ServerPlayer).TellHands(targetPlayers, this)
                     }))
