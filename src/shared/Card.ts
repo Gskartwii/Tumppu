@@ -1,5 +1,3 @@
-import { TargetedWildcard } from "./Player";
-
 export const enum Color {
     Red,
     Blue,
@@ -44,7 +42,6 @@ export interface ISerializedCard {
     Type: NormalCardType | WildcardCardType
     Color?: Color
     Number?: number
-    TargetPlayerIndex?: number
 }
 
 export class NormalCard implements Card {

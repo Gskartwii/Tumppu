@@ -1,6 +1,6 @@
 import { GameState } from '../shared/GameState'
-import { Color, Card, WildcardCardType, CardSequence } from 'shared/Card';
-import { TumppuPlayer, TargetedWildcard } from 'shared/Player';
+import { Color, Card, WildcardCardType, CardSequence, Wildcard } from 'shared/Card';
+import { TumppuPlayer } from 'shared/Player';
 
 export interface ServerPlayer extends TumppuPlayer {
     AskPlay(state: GameState, canDraw: boolean): Promise<CardSequence | boolean>
@@ -70,18 +70,16 @@ export class ServerGameState extends GameState {
                 }
 
                 switch (card.CardType) {
-                case WildcardCardType.Democracy:
                 case WildcardCardType.Dictator:
-                    toWait.push(this.askTargetPlayers(this.CurrentPlayer(), [card]))
+                    toWait.push(this.askTargetPlayers(this.CurrentPlayer(), [card]).then(([targetPlayer]) => {
+                        // Once the target player is in place, check if we need to draw cards
+                        (targetPlayer as ServerPlayer).DrawCards(card.DrawValue(), false, this)
+                    }))
                     break
                 }
 
-                Promise.all<Color | Array<ServerPlayer>>(toWait).then(() => {
-                    // Once the target player is in place, check if we need to draw cards
+                Promise.all<Color | void>(toWait).then(() => {
                     switch (card.CardType) {
-                    case WildcardCardType.Dictator:
-                        ((card as TargetedWildcard).TargetPlayer! as ServerPlayer).DrawCards(card.DrawValue(), false, this)
-                        break
                     case WildcardCardType.Everybody:
                         for (let player of this.Players) {
                             player.DrawCards(card.DrawValue(), false, this)
@@ -120,13 +118,9 @@ export class ServerGameState extends GameState {
         })
     }
 
-    protected askTargetPlayers(playerToAsk: ServerPlayer, cards: Array<TargetedWildcard>): Promise<Array<ServerPlayer>> {
+    protected askTargetPlayers(playerToAsk: ServerPlayer, cards: Array<Wildcard>): Promise<Array<ServerPlayer>> {
         return new Promise((resolve, reject) => {
             playerToAsk.AskVote(cards[0].CardType, cards.size(), this).then((targetPlayers) => {
-                for (let [index, card] of cards.entries()) {
-                    card.TargetPlayer = targetPlayers[index]
-                }
-
                 // For now, only announce vote results for DMC
                 resolve(targetPlayers as Array<ServerPlayer>)
             })
@@ -171,7 +165,7 @@ export class ServerGameState extends GameState {
                     if (spyCards.size() > this.Players.size()) {
                         spyCards = spyCards.slice(0, this.Players.size())
                     }
-                    toWait.push(this.askTargetPlayers(player as ServerPlayer, spyCards as Array<TargetedWildcard>).then((targetPlayers) => {
+                    toWait.push(this.askTargetPlayers(player as ServerPlayer, spyCards as Array<Wildcard>).then((targetPlayers) => {
                         (player as ServerPlayer).TellHands(targetPlayers, this)
                     }))
                 }
@@ -193,7 +187,7 @@ export class ServerGameState extends GameState {
             if (cards.Cards[0].IsWildcard()) {
                 switch (cards.Cards[0].CardType) {
                 case WildcardCardType.Dictator:
-                    toWait.push(this.askTargetPlayers(player as ServerPlayer, cards.Cards as Array<TargetedWildcard>).then((targetPlayers) => {
+                    toWait.push(this.askTargetPlayers(player as ServerPlayer, cards.Cards as Array<Wildcard>).then((targetPlayers) => {
                         let countDraws = targetPlayers.reduce((map, player) => {
                             map.set(player, (map.get(player) || 0) + 1)
                             return map
@@ -220,12 +214,12 @@ export class ServerGameState extends GameState {
                     }
                     break
                 case WildcardCardType.Spy:
-                    toWait.push(this.askTargetPlayers(player as ServerPlayer, cards.Cards as Array<TargetedWildcard>).then((targetPlayers) => {
+                    toWait.push(this.askTargetPlayers(player as ServerPlayer, cards.Cards as Array<Wildcard>).then((targetPlayers) => {
                         (player as ServerPlayer).TellHands(targetPlayers, this)
                     }))
                     break
                 case WildcardCardType.Exchange:
-                    toWait.push(this.askTargetPlayers(player as ServerPlayer, [cards.Cards[0] as TargetedWildcard]).then((targetPlayers) => {
+                    toWait.push(this.askTargetPlayers(player as ServerPlayer, [cards.Cards[0] as Wildcard]).then((targetPlayers) => {
                         // TODO: implement switch logic
                         const targetPlayer = targetPlayers[0]
                         let myHand = player.Hand

@@ -28,18 +28,6 @@ export interface TumppuPlayer {
     Hand?: Hand
 }
 
-export interface TargetedCard extends Card.Card {
-    TargetPlayer?: TumppuPlayer
-}
-
-export class TargetedWildcard extends Card.Wildcard implements TargetedCard {
-    TargetPlayer?: TumppuPlayer = undefined
-
-    constructor(cardType: Card.WildcardCardType) {
-        super(cardType)
-    }
-}
-
 export interface ISerializedPlayer {
     Hand: Array<Card.ISerializedCard> | number
     Player?: Player

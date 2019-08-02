@@ -1,5 +1,5 @@
 import * as Card from './Card'
-import { ISerializedPlayer, TumppuPlayer, TargetedCard, TargetedWildcard, RealPlayer } from './Player'
+import { ISerializedPlayer, TumppuPlayer, RealPlayer } from './Player'
 
 export const enum Direction {
     Clockwise,
@@ -56,16 +56,16 @@ export class GameState {
         }
 
         for (let i = 0; i < 4; i++) {
-            allCards.push(new TargetedWildcard(Card.WildcardCardType.Draw4))
+            allCards.push(new Card.Wildcard(Card.WildcardCardType.Draw4))
         }
         for (let i = 0; i < 3; i++) {
-            allCards.push(new TargetedWildcard(Card.WildcardCardType.Spy))
+            allCards.push(new Card.Wildcard(Card.WildcardCardType.Spy))
         }
-        //allCards.push(new TargetedWildcard(Card.WildcardCardType.Democracy))
-        allCards.push(new TargetedWildcard(Card.WildcardCardType.Dictator))
-        allCards.push(new TargetedWildcard(Card.WildcardCardType.Everybody))
-        //allCards.push(new TargetedWildcard(Card.WildcardCardType.Exchange))
-        allCards.push(new TargetedWildcard(Card.WildcardCardType.Polluter))
+        //allCards.push(new Card.Wildcard(Card.WildcardCardType.Democracy))
+        allCards.push(new Card.Wildcard(Card.WildcardCardType.Dictator))
+        allCards.push(new Card.Wildcard(Card.WildcardCardType.Everybody))
+        //allCards.push(new Card.Wildcard(Card.WildcardCardType.Exchange))
+        allCards.push(new Card.Wildcard(Card.WildcardCardType.Polluter))
 
         this.DrawPile = allCards
     }
@@ -103,7 +103,6 @@ export class GameState {
         let card = this.DrawPile.shift()!
         if (card.IsWildcard()) {
             card.Color = undefined;
-            (card as TargetedWildcard).TargetPlayer = undefined
         }
 
         return card
@@ -197,19 +196,6 @@ export class GameState {
     }
 
     protected handleCardComboMode(card: Card.Card, player: TumppuPlayer): void {
-        if (card.IsWildcard()) {
-            if (card.CardType !== Card.WildcardCardType.Exchange) {
-                error("can't handle card type " + card.CardType)
-            }
-            let myHand = player.Hand
-            let targetPlayer = (card as TargetedCard).TargetPlayer!
-            let otherHand = targetPlayer.Hand
-            player.Hand = otherHand
-            targetPlayer.Hand = myHand
-
-            this.GiveTurn(targetPlayer)
-            return
-        }
         switch (card.CardType) {
             case Card.NormalCardType.Skip:
                 // rule 16.d.v
@@ -410,17 +396,13 @@ export class GameState {
             Type: card.CardType,
             Color: card.Color,
             Number: card instanceof Card.NormalCard ? card.Number : undefined,
-            TargetPlayerIndex: card.IsWildcard() && (card as TargetedWildcard).TargetPlayer !== undefined ? this.SerializePlayer((card as TargetedWildcard).TargetPlayer!) : undefined,
         }
     }
 
     public DeserializeCard(serialized: Card.ISerializedCard): Card.Card {
         if (serialized.Wildcard) {
-            let result = new TargetedWildcard(serialized.Type as Card.WildcardCardType)
+            let result = new Card.Wildcard(serialized.Type as Card.WildcardCardType)
             result.Color = serialized.Color
-            if (serialized.TargetPlayerIndex !== undefined) {
-                result.TargetPlayer = this.Players[serialized.TargetPlayerIndex]
-            }
 
             return result
         }
