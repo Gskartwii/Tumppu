@@ -83,10 +83,10 @@ export class GameState {
             drawPileCards[i] = temp;
         }
 
-        drawPileCards.unshift(new Card.Wildcard(Card.WildcardCardType.Democracy))
+        /*drawPileCards.unshift(new Card.Wildcard(Card.WildcardCardType.Democracy))
         drawPileCards.unshift(new Card.Wildcard(Card.WildcardCardType.Spy))
         drawPileCards.unshift(new Card.Wildcard(Card.WildcardCardType.Spy))
-        drawPileCards.unshift(new Card.NormalCard(Card.Color.Red, Card.NormalCardType.Number, 2))
+        drawPileCards.unshift(new Card.NormalCard(Card.Color.Red, Card.NormalCardType.Number, 2))*/
     }
 
     public CanDrawCards(n: number): boolean {
