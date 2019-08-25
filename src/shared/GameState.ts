@@ -33,6 +33,7 @@ export class GameState {
     DrawPile: Array<Card.Card> = []
     DiscardPile: Array<Card.Card> = []
     CurrentCombo: Card.CardSequence | undefined
+    Random = new Random(tick())
 
     constructor(players: Array<TumppuPlayer>) {
         this.Players = players
@@ -75,7 +76,7 @@ export class GameState {
 
         let drawPileCards = this.DrawPile
         for (let i = 0; i < drawPileCards.size(); i++) {
-            const randomCardIndex: number = math.random(i, drawPileCards.size() - 1);
+            const randomCardIndex: number = this.Random.NextInteger(i, drawPileCards.size() - 1);
 
             const temp = drawPileCards[randomCardIndex];
             drawPileCards[randomCardIndex] = drawPileCards[i];

@@ -146,7 +146,7 @@ export class ServerGameState extends GameState {
                 let tieBreaker: TumppuPlayer | undefined = undefined
                 let winner = voteCounts[0][0]
                 if (voteCounts.size() !== 0) {
-                    tieBreaker = voteCounts[math.random(0, voteCounts.size() - 1)][0]
+                    tieBreaker = voteCounts[this.Random.NextInteger(0, voteCounts.size() - 1)][0]
                     winner = tieBreaker
                 }
 
