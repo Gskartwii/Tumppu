@@ -61,7 +61,7 @@ export class GameState {
         for (let i = 0; i < 3; i++) {
             allCards.push(new Card.Wildcard(Card.WildcardCardType.Spy))
         }
-        //allCards.push(new Card.Wildcard(Card.WildcardCardType.Democracy))
+        allCards.push(new Card.Wildcard(Card.WildcardCardType.Democracy))
         allCards.push(new Card.Wildcard(Card.WildcardCardType.Dictator))
         allCards.push(new Card.Wildcard(Card.WildcardCardType.Everybody))
         //allCards.push(new Card.Wildcard(Card.WildcardCardType.Exchange))
@@ -81,6 +81,11 @@ export class GameState {
             drawPileCards[randomCardIndex] = drawPileCards[i];
             drawPileCards[i] = temp;
         }
+
+        drawPileCards.unshift(new Card.Wildcard(Card.WildcardCardType.Democracy))
+        drawPileCards.unshift(new Card.Wildcard(Card.WildcardCardType.Spy))
+        drawPileCards.unshift(new Card.Wildcard(Card.WildcardCardType.Spy))
+        drawPileCards.unshift(new Card.NormalCard(Card.Color.Red, Card.NormalCardType.Number, 2))
     }
 
     public CanDrawCards(n: number): boolean {

@@ -2,6 +2,7 @@ import { LocalGameState } from "./GameState";
 import { ClientEvent } from "@rbxts/net";
 import { ISerializedCard, CardSequence, Color, WildcardCardType } from "shared/Card";
 import { GameView } from "./GameView";
+import { TumppuPlayer } from "shared/Player";
 
 const tellDraw = new ClientEvent("TellDraw")
 const tellPlay = new ClientEvent("TellPlay")
@@ -96,14 +97,37 @@ export class NetworkManager {
             askVote.SendToServer(players.map((player) => this.GameState.SerializePlayer(player)))
         })
 
-        tellVoteCompleted.Connect((results: Array<[number, number]>) => {
+        tellVoteCompleted.Connect((results: Array<[number, number]>, tieBreaker?: number) => {
             const resultMap = new Map(results
                 .map(([voter, target]) => [
                     this.GameState.DeserializePlayer(voter),
                     this.GameState.DeserializePlayer(target),
                 ]));
+            
+            let tieBreakerPlayer: TumppuPlayer | undefined = undefined
+            if (tieBreaker !== undefined) {
+                tieBreakerPlayer = this.GameState.DeserializePlayer(tieBreaker)
+            }
 
-            print("Received some votes")
+            const voteCounts = resultMap.entries().reduce((counts, [voter, votee]) => {
+                counts.set(votee, (counts.get(votee) || 0) + 1)
+
+                return counts
+            }, new Map<TumppuPlayer, number>()).entries()
+            table.sort(voteCounts, ([playerA, votesA], [playerB, votesB]) => {
+                if (playerA === tieBreaker) {
+                    return true
+                } else if (playerB === tieBreaker) {
+                    return false
+                }
+
+                return votesA > votesB
+            })
+
+            const voteTarget = voteCounts[0][0]
+            this.GameState.GiveTurn(voteTarget)
+
+            this.gameView.PresentVotes(voteCounts, tieBreakerPlayer)
         })
 
         tellHands.Connect((hands: Array<[number, Array<ISerializedCard>]>) => {

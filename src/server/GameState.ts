@@ -12,7 +12,7 @@ export interface ServerPlayer extends TumppuPlayer {
     TellPlay(player: TumppuPlayer, cards: CardSequence, state: GameState): void
     TellDraw(player: TumppuPlayer, cards: Array<Card>, endCombo: boolean, state: GameState): void
     TellColor(color: Color, state: GameState): void
-    TellVoteCompleted(votes: Map<TumppuPlayer, TumppuPlayer>, state: GameState): void
+    TellVoteCompleted(votes: Map<TumppuPlayer, TumppuPlayer>, tieBreaker: TumppuPlayer | undefined, state: GameState): void
     TellHands(players: Array<TumppuPlayer>, state: GameState): void
 
     DrawCards(n: number, endCombo: boolean, state: ServerGameState): Array<Card>
@@ -65,7 +65,7 @@ export class ServerGameState extends GameState {
         return new Promise((resolve, reject) => {
             if (card.IsWildcard()) {
                 let toWait = []
-                if (!card.IsComboCard()) {
+                if (!card.IsComboStartCard()) {
                     toWait.push(this.askAndAnnounceColor(this.CurrentPlayer(), card))
                 }
 
@@ -118,6 +118,50 @@ export class ServerGameState extends GameState {
         })
     }
 
+    protected askAndAnnounceVote(): Promise<[Map<TumppuPlayer, TumppuPlayer>, TumppuPlayer?]> {
+        return new Promise((resolve) => {
+            const toWait = []
+            const votes = new Map<TumppuPlayer, TumppuPlayer>()
+            for (let player of this.Players) {
+                toWait.push(new Promise((resolve) => {
+                    player.AskVote(WildcardCardType.Democracy, 1, this).then(([votee]) => {
+                        print("received vote")
+                        votes.set(player, votee)
+
+                        resolve()
+                    })
+                }))
+            }
+
+            Promise.all(toWait).then(() => {
+                let voteCounts = votes.entries().reduce((counts, [voter, votee]) => {
+                    counts.set(votee, (counts.get(votee) || 0) + 1)
+
+                    return counts
+                }, new Map<TumppuPlayer, number>()).entries()
+                table.sort(voteCounts, ([playerA, votesA], [playerB, votesB]) => {
+                    return votesA > votesB
+                })
+                voteCounts = voteCounts.filter(([player, count]) => count === voteCounts[0][1])
+                let tieBreaker: TumppuPlayer | undefined = undefined
+                let winner = voteCounts[0][0]
+                if (voteCounts.size() !== 0) {
+                    tieBreaker = voteCounts[math.random(0, voteCounts.size() - 1)][0]
+                    winner = tieBreaker
+                }
+
+                for (let player of this.Players) {
+                    print("telling vote completed")
+                    player.TellVoteCompleted(votes, tieBreaker, this)
+                }
+
+                this.GiveTurn(winner)
+
+                resolve([votes, tieBreaker])
+            })
+        })
+    }
+
     protected askTargetPlayers(playerToAsk: ServerPlayer, cards: Array<Wildcard>): Promise<Array<ServerPlayer>> {
         return new Promise((resolve, reject) => {
             playerToAsk.AskVote(cards[0].CardType, cards.size(), this).then((targetPlayers) => {
@@ -127,19 +171,20 @@ export class ServerGameState extends GameState {
         })
     }
 
-    public EndCombo(): Promise<void> {
-        // TODO: democracy?
+    public async EndCombo(): Promise<void> {
+        const lastPlayer = this.LastPlayer as ServerPlayer
+        if (this.CurrentCombo!.Cards.some((card) => {
+            return card.IsWildcard() && card.CardType === WildcardCardType.Democracy
+        })) {
+            await this.askAndAnnounceVote()
+        }
+
         (this.CurrentPlayer()).DrawCards(this.CurrentCombo!.DrawValue(), true, this)
-        return new Promise((resolve) => {
-            if (this.LastCard().IsWildcard()) {
-                this.askAndAnnounceColor(this.LastPlayer as ServerPlayer, this.LastCard())
-                    .then(resolve)
-                return
-            }
-            resolve()
-        }).then(() => {
-            super.EndCombo()
-        })
+        super.EndCombo()
+
+        if (this.LastCard().IsWildcard()) {
+            await this.askAndAnnounceColor(lastPlayer as ServerPlayer, this.LastCard())
+        }
     }
 
     public BroadcastDraw(drawingPlayer: ServerPlayer, cards: Array<Card>, endCombo: boolean): void {

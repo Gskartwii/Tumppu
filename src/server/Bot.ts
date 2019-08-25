@@ -118,7 +118,7 @@ export class BotPlayer extends AbstractPlayer implements ServerPlayer {
         // nop
     }
 
-    public TellVoteCompleted(votes: Map<TumppuPlayer, TumppuPlayer>, state: GameState): void {
+    public TellVoteCompleted(votes: Map<TumppuPlayer, TumppuPlayer>, tieBreaker: TumppuPlayer | undefined, state: GameState): void {
         // nop
     }
 

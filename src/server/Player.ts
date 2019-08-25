@@ -19,7 +19,7 @@ const tellHands = new Net.ServerEvent("TellHands")
 function connectOnce<T extends Array<unknown>>(event: Net.ServerEvent, forPlayer: RealPlayer): Promise<T> {
     return new Promise((resolve, reject) => {
         let connection: RBXScriptConnection
-        connection = (event.getEvent() as RBXScriptSignal<(player: Player, ...args: T) => void>).Connect((player, ...args) => {
+        connection = (event.GetEvent() as RBXScriptSignal<(player: Player, ...args: T) => void>).Connect((player, ...args) => {
             if (forPlayer.Player === player) {
                 connection.Disconnect()
                 resolve(args)
@@ -101,12 +101,13 @@ export class ServerRealPlayer extends RealPlayer implements ServerPlayer {
         tellColor.SendToPlayer(this.Player, color)
     }
 
-    public TellVoteCompleted(votes: Map<TumppuPlayer, TumppuPlayer>, state: GameState): void {
+    public TellVoteCompleted(votes: Map<TumppuPlayer, TumppuPlayer>, tieBreaker: TumppuPlayer | undefined, state: GameState): void {
         tellVoteCompleted.SendToPlayer(this.Player, votes
             .entries()
             .map((entry) => [
                 state.SerializePlayer(entry[0]),
-                state.SerializePlayer(entry[1])]))
+                state.SerializePlayer(entry[1])]),
+            tieBreaker !== undefined ? state.SerializePlayer(tieBreaker) : undefined)
     }
 
     public TellHands(players: Array<TumppuPlayer>, state: GameState): void {

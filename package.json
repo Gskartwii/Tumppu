@@ -10,9 +10,9 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "@rbxts/net": "^1.0.10",
-    "@rbxts/tween": "^1.0.1",
-    "@rbxts/types": "^1.0.235",
+    "@rbxts/net": "^1.1.2",
+    "@rbxts/tween": "^1.0.2",
+    "@rbxts/types": "^1.0.249",
     "roblox-ts": "^0.2.14"
   }
 }
