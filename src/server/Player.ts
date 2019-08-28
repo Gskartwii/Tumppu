@@ -15,6 +15,7 @@ const tellDraw = new Net.ServerEvent("TellDraw")
 const tellColor = new Net.ServerEvent("TellColor")
 const tellVoteCompleted = new Net.ServerEvent("TellVoteCompleted")
 const tellHands = new Net.ServerEvent("TellHands")
+const tellExchange = new Net.ServerEvent("TellExchange")
 
 function connectOnce<T extends Array<unknown>>(event: Net.ServerEvent, forPlayer: RealPlayer): Promise<T> {
     return new Promise((resolve, reject) => {
@@ -118,6 +119,21 @@ export class ServerRealPlayer extends RealPlayer implements ServerPlayer {
                     player.Hand!.Cards
                         .map((card) => state.SerializeCard(card))]
             }))
+    }
+
+    public TellExchange(player: TumppuPlayer, target: TumppuPlayer, state: GameState) {
+        let givenCards: Array<Card> | undefined = undefined
+
+        if (player === this) {
+            givenCards = target.Hand!.Cards
+        } else if (target === this) {
+            givenCards = player.Hand!.Cards
+        }
+
+        tellHands.SendToPlayer(this.Player,
+            state.SerializePlayer(player),
+            state.SerializePlayer(target),
+            givenCards !== undefined ? givenCards.map((card) => state.SerializeCard(card)) : undefined)
     }
 
     public DrawCards(n: number, endCombo: boolean, state: ServerGameState): Array<Card> {

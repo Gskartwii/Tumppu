@@ -8,7 +8,8 @@ const tellDraw = new ClientEvent("TellDraw")
 const tellPlay = new ClientEvent("TellPlay")
 const tellColor = new ClientEvent("TellColor")
 const tellVoteCompleted = new ClientEvent("TellVoteCompleted")
-const tellHands=  new ClientEvent("TellHands")
+const tellHands = new ClientEvent("TellHands")
+const tellExchange = new ClientEvent("TellExchange")
 const askReady = new ClientEvent("AskReady")
 const askPlay = new ClientEvent("AskPlay")
 const askColor = new ClientEvent("AskColor")
@@ -139,6 +140,11 @@ export class NetworkManager {
             )
 
             this.gameView.PresentCards(playerCards)
+        })
+
+        tellExchange.Connect((playerIndex: number, targetIndex: number, givenCards?: Array<ISerializedCard>) => {
+            const player = this.GameState.DeserializePlayer(playerIndex)
+            const target = this.GameState.DeserializePlayer(targetIndex)
         })
 
         askReady.Connect(() => {

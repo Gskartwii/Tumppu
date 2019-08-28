@@ -14,6 +14,7 @@ export interface ServerPlayer extends TumppuPlayer {
     TellColor(color: Color, state: GameState): void
     TellVoteCompleted(votes: Map<TumppuPlayer, TumppuPlayer>, tieBreaker: TumppuPlayer | undefined, state: GameState): void
     TellHands(players: Array<TumppuPlayer>, state: GameState): void
+    TellExchange(player: TumppuPlayer, target: TumppuPlayer, state: GameState): void
 
     DrawCards(n: number, endCombo: boolean, state: ServerGameState): Array<Card>
 }
@@ -200,6 +201,16 @@ export class ServerGameState extends GameState {
 
         super.PlayCards(player, cards)
     }
+    
+    protected swapCards(player: TumppuPlayer, target: TumppuPlayer): void {
+        for (let announceToPlayer of this.Players) {
+            announceToPlayer.TellExchange(player, target, this)
+        }
+
+        const targetHand = target.Hand
+        target.Hand = player.Hand
+        player.Hand = targetHand
+    }
 
     protected handleCards(player: TumppuPlayer, cards: CardSequence): Promise<void> {
         if (this.IsComboMode()) {
@@ -212,6 +223,14 @@ export class ServerGameState extends GameState {
                     }
                     toWait.push(this.askTargetPlayers(player as ServerPlayer, spyCards as Array<Wildcard>).then((targetPlayers) => {
                         (player as ServerPlayer).TellHands(targetPlayers, this)
+                    }))
+                }
+
+                let exCards = cards.Cards.filter((card) => card.IsWildcard() && card.CardType === WildcardCardType.Exchange)
+                if (exCards.size() !== 0) {
+                    toWait.push(this.askTargetPlayers(player as ServerPlayer, [exCards[0] as Wildcard]).then(([target]) => {
+                        this.swapCards(player, target)
+                        this.GiveTurn(target)
                     }))
                 }
 
@@ -264,13 +283,8 @@ export class ServerGameState extends GameState {
                     }))
                     break
                 case WildcardCardType.Exchange:
-                    toWait.push(this.askTargetPlayers(player as ServerPlayer, [cards.Cards[0] as Wildcard]).then((targetPlayers) => {
-                        // TODO: implement switch logic
-                        const targetPlayer = targetPlayers[0]
-                        let myHand = player.Hand
-                        let targetHand = targetPlayer.Hand
-                        player.Hand = targetHand
-                        targetPlayer.Hand = myHand
+                    toWait.push(this.askTargetPlayers(player as ServerPlayer, [cards.Cards[0] as Wildcard]).then(([targetPlayer]) => {
+                        this.swapCards(player, targetPlayer)
                     }))
                     break
                 }

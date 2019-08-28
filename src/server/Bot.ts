@@ -130,6 +130,10 @@ export class BotPlayer extends AbstractPlayer implements ServerPlayer {
         // nop
     }
 
+    public TellExchange(player: TumppuPlayer, target: TumppuPlayer, state: GameState): void {
+
+    }
+
     public DrawCards(n: number, endCombo: boolean, state: ServerGameState): Array<Card> {
         let cards = state.DrawCards(n)
         this.Hand.AddCards(cards)
