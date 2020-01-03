@@ -32,8 +32,8 @@ export class RenderCardSet {
         this.Mouse = mouse
 
         this.mouseConnection = mouse.Move.Connect(() => {
-            if (!this.canDelegate()) {
-                this.tweenCardsToPosition(this.getCardRelativePositions(), MouseMoveTweenInfo)
+            if (!this.cardsFit(this.CardRenders)) {
+                this.tweenCardsToPosition(this.getCardRelativePositions(this.CardRenders), MouseMoveTweenInfo)
             }
         })
     }
@@ -46,7 +46,7 @@ export class RenderCardSet {
         return true === this.ownedCardRenders.get(render)
     }
 
-    private cardRendersInOrder(): Array<[Card, TextButton]> {
+    private cardRendersInOrder(renders: Map<Card, TextButton>): Array<[Card, TextButton]> {
         function reliableTieBreaker(a: unknown, b: unknown): boolean {
             // HACK
             let aStr = tostring(a)
@@ -57,11 +57,11 @@ export class RenderCardSet {
         if (!this.UseStandardOrder) {
             let result: Array<[Card, TextButton]> = []
             for (let card of this.Hand) {
-                result.push([card, this.CardRenders.get(card)!])
+                result.push([card, renders.get(card)!])
             }
             return result
         }
-        let result = this.CardRenders.entries()
+        let result = renders.entries()
         table.sort(result, ([a, _], [b, __]) => {
             let aWild = a.IsWildcard()
             let bWild = b.IsWildcard()
@@ -102,34 +102,61 @@ export class RenderCardSet {
         return result
     }
 
-    private fixLayoutOrders(): void {
+    private fixLayoutOrders(renders: Map<Card, TextButton>): void {
         let i = 0
-        for (let [card, render] of this.cardRendersInOrder()) {
+        for (let [card, render] of this.cardRendersInOrder(renders)) {
             render.LayoutOrder = i
             render.ZIndex = i
             i++
         }
     }
 
-    private canDelegate(): boolean {
+    private cardsFit(renders: Map<Card, TextButton>): boolean {
         const frameWidth = this.RenderFrame.AbsoluteSize.X
-        const countCards = this.CardRenders.size()
+        const countCards = renders.size()
         const cardWidth = this.EstimateAbsoluteSize().X
         const cardsWidth = cardWidth + (countCards - 1) * cardWidth * CardOffsetRatio
 
         return frameWidth >= cardsWidth
     }
+
+    private getPositionCurve(normMousX: number, countCards: number) {
+        const partThresold = math.max(0.15, 0.15 - 1/countCards)
+
+        const quickGrowStartPos = math.max(0, normMousX - partThresold)
+        const quickGrowEndPos = math.min(1, normMousX + partThresold)
+        const quickGrowStartOff = math.max(0, quickGrowStartPos - 0.1)
+        const quickGrowEndOff = math.min(1, quickGrowEndPos + 0.1)
+
+        return (normIndex: number) => {
+            // Construct the curve in three parts
+
+            if (normIndex < quickGrowStartPos) {
+                // pre-quick grow
+                return (math.sin(
+                        normIndex/quickGrowStartPos*math.pi/2 - math.pi/2) + 1)
+                        *quickGrowStartOff
+            } else if (normIndex > quickGrowEndPos) {
+                // post-quick grow
+                return math.sin((normIndex - quickGrowEndPos)/(1-quickGrowEndPos)*math.pi/2)
+                    * (1-quickGrowEndOff)
+                    + quickGrowEndOff
+            } else {
+                // quick grow: linear
+                return (normIndex - quickGrowStartPos) / (quickGrowEndPos - quickGrowStartPos) * (quickGrowEndOff - quickGrowStartOff) + quickGrowStartOff
+            }
+        }
+    } 
     
-    private getCardAbsolutePositions(): Map<Card, Vector2> {
-        let sorted = this.cardRendersInOrder()
+    private getCardAbsolutePositions(renders: Map<Card, TextButton>): Map<Card, Vector2> {
+        let sorted = this.cardRendersInOrder(renders)
 
         const countCards = sorted.size()
         if (countCards === 0) {
             return new Map()
         }
 
-        this.fixLayoutOrders()
-        const cardWidth = this.EstimateAbsoluteSize().X
+        this.fixLayoutOrders(renders)
         const frameStartX = this.RenderFrame.AbsolutePosition.X
         const frameWidth = this.RenderFrame.AbsoluteSize.X
         const frameEndX = frameStartX + frameWidth
@@ -137,14 +164,15 @@ export class RenderCardSet {
         const frameEndY = frameStartY + this.RenderFrame.AbsoluteSize.Y
         const mousePositionX = this.Mouse.X
         const mousePositionY = this.Mouse.Y
+        const estCardWidth = this.EstimateAbsoluteSize().X
+        const maxCardOffset = estCardWidth * CardOffsetRatio
 
-        if (this.canDelegate()) {
-            // deletgate calculations to a UIGridLayout with center alignment
-            return this.getAbsolutePositionsCenterAligned()
-        }
+        const baseCardWidth = math.min(maxCardOffset, frameWidth / countCards)
+        const cardAreaMaxWidth = (countCards - 1) * maxCardOffset + estCardWidth
+        const cardsStartOffset = math.max(0, 0.5 * frameWidth - 0.5 * cardAreaMaxWidth)
 
-        const baseCardWidth = (frameWidth) / countCards
-        if (mousePositionX < frameStartX
+        if (this.cardsFit(renders) || 
+            mousePositionX < frameStartX
             || mousePositionX > frameEndX
             || mousePositionY < frameStartY
             || mousePositionY > frameEndY) {
@@ -152,28 +180,24 @@ export class RenderCardSet {
                 let positions = new Map<Card, Vector2>()
                 let i = 0
                 for (let [card, render] of sorted) {
-                    positions.set(card, new Vector2(baseCardWidth * i + frameStartX, frameStartY))
+                    positions.set(card, new Vector2(baseCardWidth * i + frameStartX + cardsStartOffset, frameStartY))
                     i++
                 }
                 return positions
             }
 
-        const normalizedMouseX = 1 - (mousePositionX - frameStartX) / (frameEndX - frameStartX)
-        const paramA = 3
+        const normalizedMouseX = (mousePositionX - frameStartX) / (frameEndX - frameStartX)
+        //const paramA = 3
+        const curve = this.getPositionCurve(normalizedMouseX, countCards)
 
         let positions = new Map<Card, Vector2>()
         let i = 0
         for (let [card, render] of sorted) {
-            let normalizedIndex = i / (countCards - 1)
-            let normalizedPosition = (
-                  (1/6)*paramA*math.pow(normalizedIndex, 3)
-                - (1/2)*paramA*normalizedMouseX*math.pow(normalizedIndex, 2)
-                + normalizedIndex
-                - (1/6)*paramA*normalizedIndex
-                + (1/2)*paramA*normalizedMouseX*normalizedIndex)
+            let normalizedIndex = i / countCards
+            const normalizedPosition = curve(normalizedIndex)
 
             positions.set(card, new Vector2(
-                normalizedPosition*(frameWidth - baseCardWidth) + frameStartX,
+                normalizedPosition*frameWidth + frameStartX,
                 frameStartY,
             ))
             i++
@@ -181,7 +205,7 @@ export class RenderCardSet {
         return positions
     }
 
-    private getAbsolutePositionsCenterAligned(): Map<Card, Vector2> {
+    private getAbsolutePositionsCenterAligned(renders: Map<Card, TextButton>): Map<Card, Vector2> {
         let layoutDelegate = new Instance("UIGridLayout")
         layoutDelegate.Name = "__LayoutDelegate"
 
@@ -193,7 +217,7 @@ export class RenderCardSet {
         layoutDelegate.Parent = this.RenderFrame
         layoutDelegate.SortOrder = Enum.SortOrder.LayoutOrder
 
-        let result = this.CardRenders.entries().reduce((map, [card, frame]) => {
+        let result = renders.entries().reduce((map, [card, frame]) => {
             map.set(card, frame.AbsolutePosition)
             return map
         }, new Map<Card, Vector2>())
@@ -201,8 +225,8 @@ export class RenderCardSet {
         return result
     }
 
-    private getCardRelativePositions(): Map<Card, Vector2> {
-        let result = this.getCardAbsolutePositions()
+    private getCardRelativePositions(renders: Map<Card, TextButton>): Map<Card, Vector2> {
+        let result = this.getCardAbsolutePositions(renders)
         result.forEach((pos, card, map) => {
             return map.set(card, pos.sub(this.RenderFrame.AbsolutePosition))
         })
@@ -225,7 +249,7 @@ export class RenderCardSet {
             return map
         }, new Map<Card, TextButton>())
 
-        this.getCardRelativePositions().forEach((pos, card) => {
+        this.getCardRelativePositions(this.CardRenders).forEach((pos, card) => {
             this.CardRenders.get(card)!.Position = new UDim2(0, pos.X, 0, pos.Y)
         })
     }
@@ -278,26 +302,34 @@ export class RenderCardSet {
         for (let [card, render] of newRenders) {
             this.ownedCardRenders.set(render, true)
         }
-        this.tweenCardsToPosition(this.getCardRelativePositions())
+        this.tweenCardsToPosition(this.getCardRelativePositions(this.CardRenders))
 
         return newRenders
     }
 
     public MakeSpaceForCardRenders(cards: Map<Card, TextButton>): void {
+        const oldParents = new Map<TextButton, Instance>()
         for (let [card, render] of cards) {
+            oldParents.set(render, render.Parent!)
             render.Parent = this.RenderFrame
         }
 
-        this.CardRenders = new Map(this.CardRenders.entries().concat(cards.entries()))
-        let positions = this.getCardRelativePositions()
+        const tempRenders = new Map(this.CardRenders.entries().concat(cards.entries()))
+        let positions = this.getCardRelativePositions(tempRenders)
         for (let [card, render] of cards) {
             positions.delete(card)
         }
         this.tweenCardsToPosition(positions)
+
+        for (let [render, parent] of oldParents) {
+            render.Parent = parent
+        }
     }
 
     public AddRender(card: Card, render: TextButton): void {
+        this.Hand.push(card)
         this.ownedCardRenders.set(render, true)
+        this.CardRenders.set(card, render)
         render.Parent = this.RenderFrame
     }
 
@@ -311,12 +343,8 @@ export class RenderCardSet {
             return map
         }, new Map<TextButton, Instance | undefined>())
 
-        for (let [card, render] of cards) {
-            render.Parent = this.RenderFrame
-            this.CardRenders.set(card, render)
-        }
-
-        let result = this.getCardAbsolutePositions()
+        const tempRenders = new Map(this.CardRenders.entries().concat(cards.entries()))
+        let result = this.getCardAbsolutePositions(tempRenders)
 
         for (let [card, render] of cards) {
             this.CardRenders.delete(card)
@@ -342,7 +370,7 @@ export class RenderCardSet {
             this.CardRenders.delete(card)
         }
 
-        this.tweenCardsToPosition(this.getCardRelativePositions())
+        this.tweenCardsToPosition(this.getCardRelativePositions(this.CardRenders))
     }
 
     public GetAbsolutePosition(): Vector2 {

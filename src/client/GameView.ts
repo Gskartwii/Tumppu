@@ -18,15 +18,60 @@ interface IOpponentData {
     BotName: string
     Position: UDim2
     AnchorPoint: Vector2
+    CardsPosition: UDim2
+    CardsAnchorPoint: Vector2
 }
 
-const LeftOpponent = {BotName: "<Korppu>", Position: new UDim2(0, 0, .5, 0), AnchorPoint: new Vector2(0, .5)}
-const TopLeftOpponent = {BotName: "<Joonatan>", Position: new UDim2(0, 0, 0, 0), AnchorPoint: new Vector2(0, 0)}
-const MiddleLeftOpponent = {BotName: "<Sofia>", Position: new UDim2(1/3, 0, 0, 0), AnchorPoint: new Vector2(.5, 0)}
-const TopOpponent = {BotName: "<Jussi>", Position: new UDim2(.5, 0, 0, 0), AnchorPoint: new Vector2(.5, 0)}
-const MiddleRightOpponent = {BotName: "<Matias>", Position: new UDim2(2/3, 0, 0, 0), AnchorPoint: new Vector2(.5, 0)}
-const TopRightOpponent = {BotName: "<Orvar>", Position: new UDim2(1, 0, 0, 0), AnchorPoint: new Vector2(1, 0)}
-const RightOpponent = {BotName: "<Tengil>", Position: new UDim2(1, 0, .5, 0), AnchorPoint: new Vector2(1, .5)}
+const LeftOpponent = {
+    BotName: "<Korppu>",
+    Position: new UDim2(0, 0, .5, 0),
+    AnchorPoint: new Vector2(0, .5),
+    CardsPosition: new UDim2(0, 0, .5, 0),
+    CardsAnchorPoint: new Vector2(1, .5)
+}
+const TopLeftOpponent = {
+    BotName: "<Joonatan>",
+    Position: new UDim2(0, 0, 0, 0),
+    AnchorPoint: new Vector2(0, 0),
+    CardsPosition: new UDim2(0, 0, 0, 0),
+    CardsAnchorPoint: new Vector2(1, 1)
+}
+const MiddleLeftOpponent = {
+    BotName: "<Sofia>",
+    Position: new UDim2(1/3, 0, 0, 0),
+    AnchorPoint: new Vector2(.5, 0),
+    CardsPosition: new UDim2(1/3, 0, 0, 0),
+    CardsAnchorPoint: new Vector2(.5, 1)
+}
+const TopOpponent = {
+    BotName: "<Jussi>",
+    Position: new UDim2(.5, 0, 0, 0),
+    AnchorPoint: new Vector2(.5, 0),
+    CardsPosition: new UDim2(.5, 0, 0, 0),
+    CardsAnchorPoint: new Vector2(.5, 1)
+}
+const MiddleRightOpponent = {
+    BotName: "<Matias>",
+    Position: new UDim2(2/3, 0, 0, 0),
+    AnchorPoint: new Vector2(.5, 0),
+    CardsPosition: new UDim2(2/3, 0, 0, 0),
+    CardsAnchorPoint: new Vector2(.5, 1)
+}
+const TopRightOpponent = {
+    BotName: "<Orvar>",
+    Position: new UDim2(1, 0, 0, 0),
+    AnchorPoint: new Vector2(1, 0),
+    CardsPosition: new UDim2(1, 0, 0, 0),
+    CardsAnchorPoint: new Vector2(0, 1)
+}
+const RightOpponent = {
+    BotName: "<Tengil>",
+    Position: new UDim2(1, 0, .5, 0),
+    AnchorPoint: new Vector2(1, .5),
+    CardsPosition: new UDim2(1, 0, .5, 0),
+    CardsAnchorPoint: new Vector2(0, .5)
+}
+
 const OpponentData = new Map<number, Array<IOpponentData>>([
     [2, [TopOpponent]],
     [3, [TopLeftOpponent, TopRightOpponent]],
@@ -185,7 +230,6 @@ class RenderDecks {
 
 class SequencePlayHandler {
     PlayQueue = new CardSequence
-    GameState: LocalGameState
     private handConnections: Array<RBXScriptConnection> = []
     private queueConnections: Map<TextButton, RBXScriptConnection> = new Map()
     private playAllConnection?: RBXScriptConnection
@@ -200,8 +244,7 @@ class SequencePlayHandler {
 
     AnimationQueue: AnimationQueue
 
-    constructor(state: LocalGameState, queue: AnimationQueue, handRender: RenderCardSet, queueRender: RenderCardSet, backFrame: GuiBase2d, playTarget: Frame, drawButton: GuiButton) {
-        this.GameState = state
+    constructor(public GameView: GameView, queue: AnimationQueue, handRender: RenderCardSet, queueRender: RenderCardSet, backFrame: GuiBase2d, playTarget: Frame, drawButton: GuiButton) {
         this.handRender = handRender
         this.queueRender = queueRender
         this.backFrame = backFrame
@@ -214,7 +257,7 @@ class SequencePlayHandler {
         return pos.sub(this.backFrame.AbsolutePosition)
     }
 
-    private tweenWithBackFrame(cards: Array<[Card, TextButton]>, oldPositions: Map<TextButton, Vector2>, newPositions: Map<TextButton, Vector2>, oldSizes: Map<TextButton, Vector2>, newSize: Vector2): Array<Promise<void>> {
+    private tweenWithBackFrame(cards: Array<[Card, GuiObject]>, oldPositions: Map<GuiObject, Vector2>, newPositions: Map<GuiObject, Vector2>, oldSizes: Map<GuiObject, Vector2>, newSize: Vector2): Array<Promise<void>> {
         let tweensResolved = []
         for (let [card, render] of cards) {
             render.ZIndex = MovingCardZIndex
@@ -243,38 +286,47 @@ class SequencePlayHandler {
         }
         return tweensResolved
     }
-
-    private swapCardRenders(cards: Array<[Card, TextButton]>, from: RenderCardSet, to: RenderCardSet): Promise<void> {
+    
+    private animatePushCardsTo(cards: Array<[Card, TextButton]>, from: RenderCardSet, basePosition: Vector2, newPositions: Map<GuiObject, Vector2>, newSize: Vector2, targetZIndexes: Map<GuiObject, number>): Promise<void> {
         return new Promise((resolve) => {
             const oldPositions = cards.reduce((map, [card, render]) => {
                 map.set(render, this.transformAbsolutePosition(render.AbsolutePosition))
                 return map
             }, new Map<TextButton, Vector2>())
-            const newPositions = new Map(to.EstimateAbsolutePositions(new Map(cards)).entries().map(([render, pos]) => [render, this.transformAbsolutePosition(pos)]))
-
             const oldSizes = cards.reduce((map, [card, render]) => {
                 map.set(render, render.AbsoluteSize)
                 return map
             }, new Map<TextButton, Vector2>())
-            const newSize = to.EstimateAbsoluteSize()
 
-            // Note: changes parent
-            to.MakeSpaceForCardRenders(new Map(cards))
             from.DisownCards(cards.map(([card, render]) => card))
 
+            let tweensResolved = this.tweenWithBackFrame(cards, oldPositions, newPositions, oldSizes, newSize)
+            Promise.all(tweensResolved).then(() => {
+                for (let [card, render] of cards) {
+                    render.ZIndex = targetZIndexes.get(render)!
+                    const relativePosition = newPositions.get(render)!.sub(this.transformAbsolutePosition(basePosition))
+                    render.Position = new UDim2(0, relativePosition.X, 0, relativePosition.Y)
+                }
+
+                resolve()
+            })
+        })
+    }
+
+    private swapCardRenders(cards: Array<[Card, TextButton]>, from: RenderCardSet, to: RenderCardSet): Promise<void> {
+        return new Promise((resolve) => {
+            const newPositions = new Map(to.EstimateAbsolutePositions(new Map(cards)).entries().map(([render, pos]) => [render, this.transformAbsolutePosition(pos)]))
+            const newSize = to.EstimateAbsoluteSize()
             const targetZIndexes = cards.reduce((map, [card, render]) => {
                 map.set(render, render.ZIndex)
                 return map
             }, new Map<TextButton, number>())
 
-            let tweensResolved = this.tweenWithBackFrame(cards, oldPositions, newPositions, oldSizes, newSize)
+            to.MakeSpaceForCardRenders(new Map(cards))
 
-            Promise.all(tweensResolved).then(() => {
+            this.animatePushCardsTo(cards, from, to.GetAbsolutePosition(), newPositions, newSize, targetZIndexes).then(() => {
                 for (let [card, render] of cards) {
                     to.AddRender(card, render)
-                    render.ZIndex = targetZIndexes.get(render)!
-                    const relativePosition = newPositions.get(render)!.sub(this.transformAbsolutePosition(to.GetAbsolutePosition()))
-                    render.Position = new UDim2(0, relativePosition.X, 0, relativePosition.Y)
                 }
 
                 Promise.spawn(() => {
@@ -325,10 +377,10 @@ class SequencePlayHandler {
         thisConnection = render.Activated.Connect(() => {
             if (this.PlayQueue.Cards.isEmpty()) {
                 // first card must always be valid, no matter if it's a combo sequence or not
-                if (!this.GameState.CanPlayCards(this.GameState.LocalPlayer(), new CardSequence([card]))) {
+                if (!this.GameView.GameState.CanPlayCards(this.GameView.GameState.LocalPlayer(), new CardSequence([card]))) {
                     return
                 }
-            } else if (!this.PlayQueue.CanAddCard(card, this.GameState.IsComboMode())) {
+            } else if (!this.PlayQueue.CanAddCard(card, this.GameView.GameState.IsComboMode())) {
                 return
             }
             // comboMode: true, because we must allow the player to
@@ -352,7 +404,7 @@ class SequencePlayHandler {
             if (!this.PlayQueue.Cards.isEmpty()) {
                 return
             }
-            if (!this.GameState.CanPlayCards(this.GameState.LocalPlayer(), new CardSequence([card]))) {
+            if (!this.GameView.GameState.CanPlayCards(this.GameView.GameState.LocalPlayer(), new CardSequence([card]))) {
                 return
             }
 
@@ -511,7 +563,7 @@ class SequencePlayHandler {
                 if (input.UserInputType === Enum.UserInputType.Keyboard
                     && input.KeyCode === Enum.KeyCode.P) {
                         // don't try to play an invalid sequence
-                        if (!this.GameState.CanPlayCards(this.GameState.LocalPlayer(), this.PlayQueue)) {
+                        if (!this.GameView.GameState.CanPlayCards(this.GameView.GameState.LocalPlayer(), this.PlayQueue)) {
                             return
                         }
 
@@ -544,16 +596,13 @@ class SequencePlayHandler {
         })
     }
 
-    public AnimateDrawCards(cards: Array<Card>): Promise<void> {
+    private animatePullCardsFrom(cards: Array<Card>, oldPosition: Vector2, oldSize: Vector2): Promise<void> {
         return new Promise((resolve) => {
             let renders = cards.reduce((map, card) => {
                 map.set(card, new RenderCard(card).FrontAsButton())
                 return map
             }, new Map<Card, TextButton>())
 
-            const source = this.playTarget.FindFirstChild<Frame>("Draw")!
-            const oldPosition = this.transformAbsolutePosition(source.AbsolutePosition)
-            const oldSize = this.transformAbsolutePosition(source.AbsoluteSize)
             const oldPositions = new Map(renders.entries().map(([card, render]) => [render, oldPosition]))
             const oldSizes = new Map(renders.entries().map(([card, render]) => [render, oldSize]))
             const newPositions = new Map(
@@ -584,6 +633,20 @@ class SequencePlayHandler {
                 })
             })
         })
+    }
+
+    public AnimateDrawCards(cards: Array<Card>): Promise<void> {
+        const source = this.playTarget.FindFirstChild<Frame>("Draw")!
+        return this.animatePullCardsFrom(cards, source.AbsolutePosition, source.AbsoluteSize)
+    }
+
+    public AnimateSwapCards(opponent: TumppuPlayer, opponentCards: Array<Card>): Promise<void> {
+        // preserve size
+        const oldSize = this.handRender.CardRenders.values()[0].AbsoluteSize
+        const targetPlayerData = this.GameView.GetOpponentData()[this.GameView.GetPlayerIndex(opponent)]
+        
+        // TODO
+        return new Promise((resolve) => {resolve()})
     }
 }
 
@@ -1669,7 +1732,7 @@ export class GameView {
         this.queueRender = new RenderCardSet([], options.queueFrame, options.mouse)
         this.queueRender.UseStandardOrder = false
         this.deckRender = new RenderDecks(options.deckContainer)
-        this.playHandler = new SequencePlayHandler(options.state, this.animationQueue, this.handRender, this.queueRender, options.baseFrame, options.deckContainer, options.drawButton)
+        this.playHandler = new SequencePlayHandler(this, this.animationQueue, this.handRender, this.queueRender, options.baseFrame, options.deckContainer, options.drawButton)
         this.colorHandler = new ColorDialog(options.colorDialog)
         this.playerChoiceHandler = new PlayerDialog(options.playerDialog, this, options.mouse)
         this.opponentRenders = new Map(this.GameState.Players
@@ -1687,6 +1750,9 @@ export class GameView {
         for (let [player, render] of this.opponentRenders) {
             render.Render()
         }
+
+        this.handRender.Render()
+        this.queueRender.Render()
     }
 
     public GetOpponentData(): Array<IOpponentData> {
