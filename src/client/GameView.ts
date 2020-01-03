@@ -673,7 +673,9 @@ class OpponentRender {
         let headshot = new Instance("ImageLabel", renderFrame)
         headshot.Name = "Headshot"
         headshot.BackgroundTransparency = 1
-        headshot.Image = this.GameView.GetPlayerImage(this.Player)
+        Promise.spawn(async () => {
+            headshot.Image = await this.GameView.GetPlayerImage(this.Player)
+        })
         headshot.Size = OpponentImageSize
 
         let playerNameContainer = new Instance("Frame", renderFrame)
@@ -1085,7 +1087,9 @@ class ChoosePlayersManager {
         playerImage.Size = PlayerDialogChoiceImageSize
         playerImage.BackgroundColor3 = PlayerDialogChoiceImageBackground
         playerImage.BorderSizePixel = 0
-        playerImage.Image = this.GameView.GetPlayerImage(player)
+        Promise.spawn(async () => {
+            playerImage.Image = await this.GameView.GetPlayerImage(player)
+        })
 
         const imageARConstraint = new Instance("UIAspectRatioConstraint", playerImage)
         imageARConstraint.AspectRatio = PlayerDialogChoiceImageAspectRatio
@@ -1644,7 +1648,9 @@ class PresentVotesManager {
         playerImage.Size = PlayerDialogChoiceImageSize
         playerImage.BackgroundColor3 = PlayerDialogChoiceImageBackground
         playerImage.BorderSizePixel = 0
-        playerImage.Image = this.GameView.GetPlayerImage(player)
+        Promise.spawn(async () => {
+            playerImage.Image = await this.GameView.GetPlayerImage(player)
+        })
 
         const imageARConstraint = new Instance("UIAspectRatioConstraint", playerImage)
         imageARConstraint.AspectRatio = PlayerDialogChoiceImageAspectRatio
@@ -1774,11 +1780,16 @@ export class GameView {
         return this.GetOpponentData()[this.GetPlayerIndex(player)].BotName
     }
 
-    public GetPlayerImage(player: TumppuPlayer): string {
-        if (player instanceof RealPlayer) {
-            return Players.GetUserThumbnailAsync(player.Player.UserId, Enum.ThumbnailType.HeadShot, Enum.ThumbnailSize.Size352x352)[0]
-        }
-        return ("https://www.roblox.com/asset-thumbnail/image?assetId=%d&width=352&height=352&format=png").format(OpponentBotAsset)
+    public GetPlayerImage(player: TumppuPlayer): Promise<string> {
+        return new Promise((resolve) => {
+            if (player instanceof RealPlayer) {
+                Promise.spawn(() => {
+                    resolve(Players.GetUserThumbnailAsync(player.Player.UserId, Enum.ThumbnailType.HeadShot, Enum.ThumbnailSize.Size352x352)[0])
+                })
+                return
+            }
+            resolve(("https://www.roblox.com/asset-thumbnail/image?assetId=%d&width=352&height=352&format=png").format(OpponentBotAsset))
+        })
     }
 
     public AskPlay(canDraw: boolean): Promise<CardSequence | boolean> {
