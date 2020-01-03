@@ -27,7 +27,7 @@ export class RenderCardSet {
     private mouseConnection: RBXScriptConnection
 
     constructor(hand: Array<Card>, frame: Frame, mouse: Mouse) {
-        this.Hand = hand
+        this.Hand = hand.copy()
         this.RenderFrame = frame
         this.Mouse = mouse
 
@@ -315,8 +315,7 @@ export class RenderCardSet {
             render.Parent = this.RenderFrame
         }
 
-        const tempRenders = new Map(this.CardRenders.entries().concat(cards.entries()))
-        let positions = this.getCardRelativePositions(tempRenders)
+        let positions = this.getCardRelativePositions(this.CardRenders)
         for (let [card, render] of cards) {
             positions.delete(card)
         }
@@ -328,10 +327,8 @@ export class RenderCardSet {
     }
 
     public AddRender(card: Card, render: TextButton): void {
-        this.ownedCardRenders.set(render, true)
         this.CardRenders.set(card, render)
         this.Hand.push(card)
-        render.Parent = this.RenderFrame
     }
 
     public EstimateAbsolutePositions(cards: Map<Card, TextButton>): Map<TextButton, Vector2> {
@@ -344,11 +341,9 @@ export class RenderCardSet {
             return map
         }, new Map<TextButton, Instance | undefined>())
 
-        const tempRenders = new Map(this.CardRenders.entries().concat(cards.entries()))
-        let result = this.getCardAbsolutePositions(tempRenders)
+        let result = this.getCardAbsolutePositions(this.CardRenders)
 
         for (let [card, render] of cards) {
-            this.CardRenders.delete(card)
             render.LayoutOrder = oldLayoutOrders.get(render)!
             render.Parent = oldParents.get(render)
         }
@@ -362,6 +357,14 @@ export class RenderCardSet {
     public EstimateAbsoluteSize(): Vector2 {
         let absoluteY = this.RenderFrame.AbsoluteSize.Y
         return new Vector2(absoluteY * CardAspectRatio, absoluteY)
+    }
+
+    public OwnCards(cards: Array<Card>): void {
+        for (let card of cards) {
+            let render = this.CardRenders.get(card)!
+            this.ownedCardRenders.set(render, true)
+            render.Parent = this.RenderFrame
+        }
     }
 
     public DisownCards(cards: Array<Card>): void {

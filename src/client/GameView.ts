@@ -315,6 +315,10 @@ class SequencePlayHandler {
 
     private swapCardRenders(cards: Array<[Card, TextButton]>, from: RenderCardSet, to: RenderCardSet): Promise<void> {
         return new Promise((resolve) => {
+            for (let [card, render] of cards) {
+                to.AddRender(card, render)
+            }
+
             const newPositions = new Map(to.EstimateAbsolutePositions(new Map(cards)).entries().map(([render, pos]) => [render, this.transformAbsolutePosition(pos)]))
             const newSize = to.EstimateAbsoluteSize()
             const targetZIndexes = cards.reduce((map, [card, render]) => {
@@ -325,9 +329,7 @@ class SequencePlayHandler {
             to.MakeSpaceForCardRenders(new Map(cards))
 
             this.animatePushCardsTo(cards, from, to.GetAbsolutePosition(), newPositions, newSize, targetZIndexes).then(() => {
-                for (let [card, render] of cards) {
-                    to.AddRender(card, render)
-                }
+                to.OwnCards(cards.map(([card, _]) => card))
 
                 Promise.spawn(() => {
                     wait() // Why is this needed? The card positions might go haywire without it
@@ -338,16 +340,10 @@ class SequencePlayHandler {
     }
 
     private animateHandToQueue(cards: Array<[Card, TextButton]>): Promise<void> {
-        this.queueRender.Hand = this.queueRender.Hand.concat(cards.map(([card, render]) => card))
-
         return this.swapCardRenders(cards, this.handRender, this.queueRender)
     }
 
     private animateQueueToHand(cards: Array<[Card, TextButton]>): Promise<void> {
-        for (let [card, render] of cards) {
-            this.queueRender.Hand.remove(this.queueRender.Hand.indexOf(card))
-        }
-
         return this.swapCardRenders(cards, this.queueRender, this.handRender)
     }
 
@@ -603,6 +599,10 @@ class SequencePlayHandler {
                 return map
             }, new Map<Card, TextButton>())
 
+            for (let [card, render] of renders) {
+                this.handRender.AddRender(card, render)
+            }
+
             const oldPositions = new Map(renders.entries().map(([card, render]) => [render, oldPosition]))
             const oldSizes = new Map(renders.entries().map(([card, render]) => [render, oldSize]))
             const newPositions = new Map(
@@ -620,8 +620,8 @@ class SequencePlayHandler {
             let tweensResolved = this.tweenWithBackFrame(renders.entries(), oldPositions, newPositions, oldSizes, newSize)
 
             Promise.all(tweensResolved).then(() => {
+                this.handRender.OwnCards(renders.keys())
                 for (let [card, render] of renders) {
-                    this.handRender.AddRender(card, render)
                     render.ZIndex = targetZIndexes.get(render)!
                     const relativePosition = newPositions.get(render)!.sub(this.transformAbsolutePosition(this.handRender.GetAbsolutePosition()))
                     render.Position = new UDim2(0, relativePosition.X, 0, relativePosition.Y)
