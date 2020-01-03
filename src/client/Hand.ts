@@ -187,7 +187,6 @@ export class RenderCardSet {
             }
 
         const normalizedMouseX = (mousePositionX - frameStartX) / (frameEndX - frameStartX)
-        //const paramA = 3
         const curve = this.getPositionCurve(normalizedMouseX, countCards)
 
         let positions = new Map<Card, Vector2>()
@@ -283,6 +282,8 @@ export class RenderCardSet {
     }
 
     public AddNewCards(cards: Array<Card>): Map<Card, TextButton> {
+        this.Hand = this.Hand.concat(cards)
+
         let baseIndex = this.CardRenders.size()
         let cardSizeVec = this.EstimateAbsoluteSize()
         let cardSize = new UDim2(0, cardSizeVec.X, 0, cardSizeVec.Y)
@@ -327,9 +328,9 @@ export class RenderCardSet {
     }
 
     public AddRender(card: Card, render: TextButton): void {
-        this.Hand.push(card)
         this.ownedCardRenders.set(render, true)
         this.CardRenders.set(card, render)
+        this.Hand.push(card)
         render.Parent = this.RenderFrame
     }
 
@@ -367,10 +368,17 @@ export class RenderCardSet {
         for (let card of cards) {
             let render = this.CardRenders.get(card)!
             this.ownedCardRenders.delete(render)
-            this.CardRenders.delete(card)
         }
 
-        this.tweenCardsToPosition(this.getCardRelativePositions(this.CardRenders))
+        this.Hand = this.Hand.filter((card) => !cards.includes(card))
+        this.tweenCardsToPosition(this.getCardRelativePositions(
+            new Map(this.CardRenders
+            .entries()
+            .filter(([card, render]) => this.ownsCard(card)))))
+
+        for (let card of cards) {
+            this.CardRenders.delete(card)
+        }
     }
 
     public GetAbsolutePosition(): Vector2 {
